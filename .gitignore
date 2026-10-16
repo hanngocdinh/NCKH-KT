@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing & Type Checking Caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Editor & OS settings
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Large raw crawler cache directories (>500MB raw PDFs)
+# (Processed CSV datasets and trained models remain tracked in the repository)
+pdf_cache/
+glofas_cache/
+tmp/
+.agents/
+
+# Sensitive credentials, API keys & Telegram configurations
+config_alerts.json
+client_secret*.json
+token*.json
+*.env
+.env*
+archive/google_docs_oauth/client_secret.json
+archive/google_docs_oauth/token.json
