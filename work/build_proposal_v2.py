@@ -193,7 +193,14 @@ def set_repeat_table_header(row):
     repeat_header(row)
 
 
-def set_run_font(run, name="Arial", size=11, bold=None, color=BLACK):
+def prevent_row_split(row):
+    tr_pr = row._tr.get_or_add_trPr()
+    cant_split = OxmlElement("w:cantSplit")
+    cant_split.set(qn("w:val"), "true")
+    tr_pr.append(cant_split)
+
+
+def set_run_font(run, name="Arial", size=10.5, bold=None, color=BLACK):
     run.font.name = name
     run._element.get_or_add_rPr().rFonts.set(qn("w:ascii"), name)
     run._element.get_or_add_rPr().rFonts.set(qn("w:hAnsi"), name)
@@ -211,10 +218,10 @@ def configure_styles(doc):
     normal._element.rPr.rFonts.set(qn("w:ascii"), "Arial")
     normal._element.rPr.rFonts.set(qn("w:hAnsi"), "Arial")
     normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Arial")
-    normal.font.size = Pt(11)
+    normal.font.size = Pt(10.5)
     normal.font.color.rgb = RGBColor(0, 0, 0)
-    normal.paragraph_format.space_after = Pt(6)
-    normal.paragraph_format.line_spacing = 1.12
+    normal.paragraph_format.space_after = Pt(5)
+    normal.paragraph_format.line_spacing = 1.08
 
     title = styles["Title"]
     title.font.name = "Arial"
@@ -225,6 +232,10 @@ def configure_styles(doc):
     title.font.bold = True
     title.font.color.rgb = RGBColor(0, 0, 0)
     title.paragraph_format.space_after = Pt(14)
+    title_ppr = title.element.get_or_add_pPr()
+    title_border = title_ppr.find(qn("w:pBdr"))
+    if title_border is not None:
+        title_ppr.remove(title_border)
 
     for name, size, before, after in (
         ("Heading 1", 16, 14, 7),
@@ -312,7 +323,9 @@ def add_table(doc, headers, rows, widths=None, header_fill=NAVY, font_size=9.5):
         if widths:
             c.width = Inches(widths[i])
     for ridx, row in enumerate(rows):
-        cells = table.add_row().cells
+        added_row = table.add_row()
+        prevent_row_split(added_row)
+        cells = added_row.cells
         shade = PALE_BLUE if ridx % 2 else WHITE
         for i, value in enumerate(row):
             c = cells[i]
@@ -484,8 +497,6 @@ add_paragraph(doc,
     "15 và 30 phút. Cảnh báo 6 đến 24 giờ từ dự báo mưa và dữ liệu thủy văn chỉ đóng vai trò bối cảnh "
     "để nhà trường chuẩn bị, không thay thế kết quả cảm biến tại chỗ.")
 
-new_page(doc)
-
 doc.add_heading("2 Tên đề tài và phạm vi nghiên cứu", level=1)
 add_paragraph(doc,
     "Tên đề tài đề xuất  Nghiên cứu và xây dựng hệ thống IoT kết hợp học máy dự báo nguy cơ ngập cục bộ "
@@ -536,8 +547,6 @@ add_paragraph(doc,
     "Lớp gần sử dụng dữ liệu cảm biến tại trường để dự báo 15 đến 30 phút. Lớp bối cảnh sử dụng dữ liệu "
     "khí tượng thủy văn bên ngoài để đưa ra xu thế 6 đến 24 giờ. Dashboard phải hiển thị rõ nguồn và "
     "khoảng dự báo để người dùng không nhầm hai kết quả.")
-
-new_page(doc)
 
 doc.add_heading("6 Input đầu vào và nhãn dự báo", level=1)
 input_rows = [
@@ -596,8 +605,6 @@ for x in [
     "Dây xoắn đôi cho đường A B và điện trở kết thúc khi cáp dài.",
 ]:
     add_bullet(doc, x)
-
-new_page(doc)
 
 doc.add_heading("8 Thiết kế thu thập dữ liệu", level=1)
 add_figure(doc, flow_path, "Hình 2  Quy trình nghiên cứu và kiểm định dữ liệu", width=6.85)
@@ -662,8 +669,6 @@ for x in [
 ]:
     add_bullet(doc, x)
 
-new_page(doc)
-
 doc.add_heading("10 Dashboard và cảnh báo", level=1)
 for x in [
     "Hiển thị mưa mực nước tốc độ dâng và trạng thái kết nối theo cùng dấu thời gian.",
@@ -718,10 +723,8 @@ add_paragraph(doc,
 doc.add_heading("Tài liệu và dữ liệu nền", level=1)
 refs = [
     "Bản đề xuất dự án nghiên cứu khoa học kỹ thuật phiên bản 1 năm học 2026 2027.",
-    "Mã nguồn và dataset hiện tại của dự án AI IoT dự báo nguy cơ ngập Hội An.",
-    "Kho bản tin khí tượng thủy văn đã lưu trong dự án.",
-    "Dữ liệu mưa lịch sử và dự báo từ nguồn API được ghi rõ trong metadata khi sử dụng.",
-    "Dữ liệu lưu lượng mô phỏng chỉ được dùng như nguồn bên ngoài và không được gọi là quan trắc thực địa.",
+    "Mã nguồn dataset hiện tại và kho bản tin khí tượng thủy văn đã lưu trong dự án.",
+    "Dữ liệu API phải được ghi nguồn trong metadata và dữ liệu lưu lượng mô phỏng không được gọi là quan trắc thực địa.",
 ]
 for ref in refs:
     add_bullet(doc, ref)
