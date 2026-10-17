@@ -9,6 +9,8 @@
 
 Dự án phát triển hệ thống trí tuệ nhân tạo (AI) kết hợp cảm biến vạn vật (IoT) nhằm **cảnh báo sớm nguy cơ ngập lụt cục bộ trước 24 giờ** tại khu vực trường học THPT Trần Quý Cáp, hạ lưu lưu vực sông Thu Bồn, TP. Hội An, tỉnh Quảng Nam.
 
+> **Cập nhật prototype:** model 24 giờ trong tài liệu cũ hiện được giữ ở trạng thái `legacy_reference_only`. Pipeline đang phát triển chính là mô hình vật lý thu nhỏ nhận dữ liệu HTTP và dự báo 15/30 phút. Kết quả là mô phỏng thử nghiệm, không phải cảnh báo vận hành cho Hội An.
+
 ---
 
 ## 🌟 ĐIỂM NỔI BẬT CỦA ĐỀ TÀI
@@ -112,6 +114,23 @@ Dự án phát triển hệ thống trí tuệ nhân tạo (AI) kết hợp cả
 ---
 
 ## ⚡ HƯỚNG DẪN KHỞI CHẠY NHANH (QUICK START)
+
+### Prototype mới: mô hình mini dự báo 15/30 phút qua HTTP
+
+Pipeline mới chạy độc lập với model 24 giờ legacy:
+
+```powershell
+$env:MINI_FLOOD_DEVICE_KEY = "replace-with-a-long-random-key"
+uvicorn mini_flood_api:app --host 0.0.0.0 --port 8000
+```
+
+Dashboard:
+
+```powershell
+streamlit run app_mini_flood_dashboard.py
+```
+
+Xem hướng dẫn đầy đủ tại [docs/MINI_FLOOD_HTTP_GUIDE.md](docs/MINI_FLOOD_HTTP_GUIDE.md).
 
 ### 1. Cài đặt Môi trường
 Yêu cầu Python >= 3.10. Khuyến nghị tạo môi trường ảo:

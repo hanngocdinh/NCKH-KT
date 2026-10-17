@@ -350,7 +350,9 @@ def add_figure(doc, path, caption, width=6.8):
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_with_next = True
     run = p.add_run()
-    run.add_picture(str(path), width=Inches(width))
+    picture = run.add_picture(str(path), width=Inches(width))
+    picture._inline.docPr.set("descr", caption)
+    picture._inline.docPr.set("title", caption)
     cap = doc.add_paragraph()
     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
     cap.paragraph_format.space_after = Pt(8)
@@ -723,8 +725,7 @@ add_paragraph(doc,
 doc.add_heading("Tài liệu và dữ liệu nền", level=1)
 refs = [
     "Bản đề xuất dự án nghiên cứu khoa học kỹ thuật phiên bản 1 năm học 2026 2027.",
-    "Mã nguồn dataset hiện tại và kho bản tin khí tượng thủy văn đã lưu trong dự án.",
-    "Dữ liệu API phải được ghi nguồn trong metadata và dữ liệu lưu lượng mô phỏng không được gọi là quan trắc thực địa.",
+    "Mã nguồn dataset, bản tin khí tượng thủy văn và dữ liệu API có metadata của dự án; dữ liệu mô phỏng được ghi riêng với quan trắc thực địa.",
 ]
 for ref in refs:
     add_bullet(doc, ref)

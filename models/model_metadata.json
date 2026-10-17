@@ -27,6 +27,7 @@
     "river_discharge_m3s",
     "discharge_3d_mean_m3s"
   ],
-  "recommended_production_model": "model_lead24h_logistic_regression.joblib",
-  "safety_guarantee": "100.0% Recall on Class 2 (High Risk Flood)"
+  "legacy_reference_model": "model_lead24h_logistic_regression.joblib",
+  "deployment_status": "legacy_reference_only",
+  "safety_guarantee": "none; the reported class-2 recall was measured on too few temporal holdout samples"
 }

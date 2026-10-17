@@ -38,3 +38,13 @@ token*.json
 .env*
 archive/google_docs_oauth/client_secret.json
 archive/google_docs_oauth/token.json
+
+# Mini flood runtime data and local model artifacts
+mini_flood.sqlite3
+mini_flood.sqlite3-*
+models/mini_flood_15m.joblib
+models/mini_flood_30m.joblib
+
+# Intermediate document render artifacts
+work/proposal_render*/
+

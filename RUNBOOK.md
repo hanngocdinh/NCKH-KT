@@ -267,7 +267,7 @@ Toàn bộ hệ thống được bảo vệ bởi bộ kiểm thử tự động
 ```powershell
 pytest -v
 ```
-*(Yêu cầu kết quả: 35/35 passed 100%).*
+*(Yêu cầu kết quả: 54/54 passed 100%).*
 
 ### 8.2. Danh mục Bộ Kiểm thử
 1. `tests/test_dataset_preparation.py`:
@@ -282,6 +282,22 @@ pytest -v
    - Kiểm thử logic phân cấp rủi ro và các kịch bản thời tiết giả lập.
 4. `tests/test_parsers.py`:
    - Kiểm thử thuật toán bóc tách tiếng Việt trên các mẫu câu thủy văn phức tạp.
+5. `tests/test_mini_flood_api.py` & `tests/test_mini_flood_features.py`:
+   - Xác thực authentication `X-Device-Key`, mã lỗi 401/422.
+   - Chống trùng lặp dữ liệu (`device_id + sequence_no`).
+   - Kiểm định cửa sổ trượt tính 8 đặc trưng và tỷ lệ dữ liệu thiếu.
+6. `tests/test_e2e_iot_flow.py` (E2E 3 Kịch bản Thí nghiệm Thực tế):
+   - **Kịch bản 1 (Bình thường):** Mưa nhỏ, mực nước thấp (< 15 cm) -> AI dự báo Mức 0, không có cảnh báo nào sinh ra.
+   - **Kịch bản 2 (Mưa lớn & Nước dâng):** Mưa 45 mm/h, dâng > 3 cm/5ph -> Nâng mức lên Cảnh báo (Mức 1), tự động kích hoạt `escalation` alert và tạo `delivery_attempts`.
+   - **Kịch bản 3 (Ngập nguy hiểm):** Mực nước 30 cm vượt ngưỡng 25 cm -> Kích hoạt Safety Rule Override Mức 2 tức thì từ bản ghi đầu tiên không cần qua warmup.
+7. `tests/test_e2e_alert_delivery.py` (Kênh Cảnh báo & Vòng đời Sự cố):
+   - Tính độc lập giữa Telegram và Email: Lỗi kết nối SMTP không ngăn cản việc gửi tin nhắn qua Telegram.
+   - Cơ chế nhắc lại (`reminder`): Tự động gửi lại sau 30 phút nếu tình trạng nguy hiểm cấp 2 kéo dài.
+   - Cơ chế phục hồi (`recovery`): Yêu cầu tối thiểu 2 chu kỳ an toàn liên tiếp trước khi phát thông báo hoàn lưu an toàn.
+8. `tests/test_e2e_offline_buffer.py` (Đệm Ngoại tuyến & Kết nối lại):
+   - Mô phỏng mất Wi-Fi, lưu đệm vào hàng đợi và tự động đẩy dồn (flush) khi có mạng trở lại.
+   - Gắn cờ `stale_timestamp` và gán trạng thái `unknown` khi bản ghi bị trễ trên 10 phút.
+
 
 ---
 

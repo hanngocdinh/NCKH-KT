@@ -240,8 +240,9 @@ def save_production_models(X: pd.DataFrame, y: pd.Series):
         },
         "lead24h_features": FEATURES_LEAD24,
         "sensorless_features": FEATURES_SENSORLESS,
-        "recommended_production_model": "model_lead24h_logistic_regression.joblib",
-        "safety_guarantee": "100.0% Recall on Class 2 (High Risk Flood)",
+        "legacy_reference_model": "model_lead24h_logistic_regression.joblib",
+        "deployment_status": "legacy_reference_only",
+        "safety_guarantee": "none; the reported class-2 recall was measured on too few temporal holdout samples",
     }
     meta_file = MODELS_DIR / "model_metadata.json"
     meta_file.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
