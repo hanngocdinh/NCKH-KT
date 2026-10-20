@@ -54,13 +54,13 @@ def test_buffered_payloads_accepted(tmp_path):
 
     # ESP32 reconnect và đẩy 5 bản ghi đệm
     for record in buffered_records:
-        res = client.post("/api/v1/telemetry", json=record, headers=headers)
+        res = client.post("/api/v2/telemetry", json=record, headers=headers)
         assert res.status_code == 200
         assert res.json()["accepted"] is True
         assert res.json()["duplicate"] is False
 
     # Giả lập bản ghi seq=3 bị gửi lại lần 2 do mất ACK từ server
-    res_dup = client.post("/api/v1/telemetry", json=buffered_records[2], headers=headers)
+    res_dup = client.post("/api/v2/telemetry", json=buffered_records[2], headers=headers)
     assert res_dup.status_code == 200
     assert res_dup.json()["accepted"] is True
     assert res_dup.json()["duplicate"] is True
@@ -87,7 +87,7 @@ def test_stale_timestamp_flagged(tmp_path):
     stale_time = datetime.now(timezone.utc) - timedelta(minutes=25)
     payload = make_payload(seq=99, stamp=stale_time, water=14.0, rain=20.0)
 
-    res = client.post("/api/v1/telemetry", json=payload, headers=headers)
+    res = client.post("/api/v2/telemetry", json=payload, headers=headers)
     assert res.status_code == 200
 
     data = res.json()

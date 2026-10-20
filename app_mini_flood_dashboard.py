@@ -6,21 +6,35 @@ Chạy: streamlit run app_mini_flood_dashboard.py
 from __future__ import annotations
 
 import json
+import os
 import time
+from urllib.parse import quote
 
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
 from mini_flood.config import MiniFloodSettings
-from mini_flood.db import MiniFloodDatabase
-from mini_flood.models import RISK_LABELS
+from mini_flood.models import ALERT_LABELS
 
 
 st.set_page_config(page_title="Mô phỏng dự báo ngập", page_icon="🌧️", layout="wide")
 settings = MiniFloodSettings.from_env()
-db = MiniFloodDatabase(settings.database_path)
+api_base = os.getenv("MINI_FLOOD_API_BASE", "http://localhost:8000/api/v2").rstrip("/")
+api_headers = {"X-Device-Key": settings.device_api_key}
+
+
+def api_get(path: str) -> tuple[dict | None, str | None]:
+    try:
+        response = requests.get(f"{api_base}{path}", headers=api_headers, timeout=5)
+        if response.status_code == 404:
+            return None, None
+        response.raise_for_status()
+        return response.json(), None
+    except requests.RequestException as exc:
+        return None, str(exc)
 
 st.title("🌧️ [MÔ PHỎNG THỬ NGHIỆM] Dự báo nguy cơ ngập")
 st.caption("Prototype AI + IoT trên mô hình vật lý thu nhỏ — không phải cảnh báo vận hành cho Hội An.")
@@ -32,23 +46,68 @@ refresh_interval = st.sidebar.selectbox("Chu kỳ làm mới", [5, 10, 30], inde
 if st.sidebar.button("Làm mới ngay"):
     st.rerun()
 
-latest = db.latest(device_id)
-rows = db.history(device_id, history_limit)
+encoded_device_id = quote(device_id, safe="")
+station, station_error = api_get(f"/stations/{encoded_device_id}/config")
+with st.sidebar.expander("Cấu hình ngưỡng động", expanded=False):
+    if station_error:
+        st.error(f"Không đọc được cấu hình từ API: {station_error}")
+    if station is None:
+        st.warning("Thiết bị chưa có cấu hình. Nhập thông số để kích hoạt cảnh báo.")
+        station = {
+            "overflow_level_cm": 40.0,
+            "warning_margin_cm": 10.0,
+            "hysteresis_cm": 2.0,
+            "recovery_hold_seconds": 120,
+        }
+    with st.form("station-config"):
+        overflow = st.number_input("Mức tràn (cm)", min_value=0.1, value=float(station["overflow_level_cm"]))
+        margin = st.number_input("Vùng đệm cảnh báo (cm)", min_value=0.1, value=float(station["warning_margin_cm"]))
+        hysteresis = st.number_input("Hysteresis (cm)", min_value=0.0, value=float(station["hysteresis_cm"]))
+        hold = st.number_input("Thời gian ổn định khi hạ mức (giây)", min_value=0, value=int(station["recovery_hold_seconds"]), step=10)
+        confirmed = st.checkbox("Xác nhận cập nhật cấu hình trạm")
+        submitted = st.form_submit_button("Lưu cấu hình")
+        if submitted:
+            if not confirmed:
+                st.error("Hãy xác nhận trước khi lưu.")
+            else:
+                try:
+                    response = requests.put(
+                        f"{api_base}/stations/{device_id}/config",
+                        headers=api_headers,
+                        json={
+                            "overflow_level_cm": overflow,
+                            "warning_margin_cm": margin,
+                            "hysteresis_cm": hysteresis,
+                            "recovery_hold_seconds": hold,
+                        },
+                        timeout=5,
+                    )
+                    response.raise_for_status()
+                    st.success("Đã cập nhật cấu hình trạm.")
+                    st.rerun()
+                except requests.RequestException as exc:
+                    st.error(f"Không thể cập nhật qua API: {exc}")
+
+latest, latest_error = api_get(f"/stations/{encoded_device_id}/latest")
+history_payload, history_error = api_get(
+    f"/stations/{encoded_device_id}/history?limit={history_limit}"
+)
+if latest_error or history_error:
+    st.error(
+        "Không thể đọc dữ liệu từ backend. "
+        f"Latest: {latest_error or 'OK'}; History: {history_error or 'OK'}"
+    )
+    st.stop()
+rows = (history_payload or {}).get("items", [])
 if latest is None:
-    st.info("Chưa có dữ liệu. Hãy chạy API và gửi telemetry từ ESP32 hoặc bộ mô phỏng.")
+    st.info(
+        "Backend đang hoạt động nhưng chưa có telemetry cho thiết bị này. "
+        "Hãy kiểm tra Serial Monitor của ESP32/Wokwi."
+    )
     st.stop()
 
-risk_15 = latest.get("risk_15m")
-risk_30 = latest.get("risk_30m")
-
-
-def confidence(raw: str | None) -> str:
-    if not raw:
-        return "chưa có"
-    try:
-        return f"{max(json.loads(raw)) * 100:.1f}%"
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return "không hợp lệ"
+forecast_15 = latest.get("forecast_15m_cm")
+forecast_30 = latest.get("forecast_30m_cm")
 
 
 init_water = f"{latest['water_level_cm']:.1f} cm"
@@ -72,7 +131,7 @@ html_stream_widget = """
   </div>
 </div>
 <script>
-  const source = new EventSource("http://localhost:8000/api/v1/stream/sse");
+  const source = new EventSource("__SSE_URL__");
   const dot = document.getElementById("dot");
   const statusEl = document.getElementById("status");
   const timeEl = document.getElementById("recv-time");
@@ -101,17 +160,30 @@ html_stream_widget = """
     dot.style.background = "#ef4444";
   };
 </script>
-""".replace("__INIT_WATER__", init_water).replace("__INIT_RAIN__", init_rain).replace("__INIT_SEQ__", init_seq)
+"""
+sse_url = f"{api_base}/stream/sse?device_id={encoded_device_id}"
+html_stream_widget = (
+    html_stream_widget
+    .replace("__INIT_WATER__", init_water)
+    .replace("__INIT_RAIN__", init_rain)
+    .replace("__INIT_SEQ__", init_seq)
+    .replace("__SSE_URL__", sse_url)
+)
 
 components.html(html_stream_widget, height=88)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Mực nước", f"{latest['water_level_cm']:.1f} cm")
 c2.metric("Cường độ mưa", f"{latest['rain_rate_mmh']:.1f} mm/h")
-c3.metric("Dự báo 15 phút", RISK_LABELS.get(risk_15, "Đang khởi động"))
-c4.metric("Dự báo 30 phút", RISK_LABELS.get(risk_30, "Đang khởi động"))
-c3.caption(f"Confidence: {confidence(latest.get('probs_15m'))}")
-c4.caption(f"Confidence: {confidence(latest.get('probs_30m'))}")
+c3.metric("Dự báo 15 phút", "Đang khởi động" if forecast_15 is None else f"{forecast_15:.1f} cm")
+c4.metric("Dự báo 30 phút", "Đang khởi động" if forecast_30 is None else f"{forecast_30:.1f} cm")
+alert_level = latest.get("alert_level")
+st.subheader(f"Trạng thái: {ALERT_LABELS.get(alert_level, 'Đang khởi động')}")
+if latest.get("warning_level_cm") is not None:
+    st.caption(
+        f"Ngưỡng cảnh báo: {latest['warning_level_cm']:.1f} cm · "
+        f"Mức tràn: {latest['overflow_level_cm']:.1f} cm"
+    )
 st.caption(f"Lần thí nghiệm: `{latest.get('experiment_id', 'unassigned')}`")
 
 if latest.get("main_factor"):
@@ -127,6 +199,20 @@ df = df.sort_values("timestamp")
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=df["timestamp"], y=df["water_level_cm"], name="Mực nước (cm)"))
 fig.add_trace(go.Scatter(x=df["timestamp"], y=df["rain_rate_mmh"], name="Mưa (mm/h)", yaxis="y2"))
+for horizon, column, color in ((15, "forecast_15m_cm", "#f59e0b"), (30, "forecast_30m_cm", "#ef4444")):
+    if column in df.columns:
+        forecast_rows = df.dropna(subset=[column])
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_rows["timestamp"] + pd.to_timedelta(horizon, unit="m"),
+                y=forecast_rows[column],
+                name=f"Dự báo +{horizon} phút",
+                line=dict(dash="dot", color=color),
+            )
+        )
+if latest.get("warning_level_cm") is not None:
+    fig.add_hline(y=latest["warning_level_cm"], line_dash="dash", line_color="#f59e0b", annotation_text="Cảnh báo")
+    fig.add_hline(y=latest["overflow_level_cm"], line_dash="dash", line_color="#ef4444", annotation_text="Mức tràn")
 fig.update_layout(
     height=420,
     xaxis_title="Thời gian",
@@ -143,8 +229,9 @@ display_cols = [
     "rain_rate_mmh",
     "water_level_cm",
     "quality_status",
-    "risk_15m",
-    "risk_30m",
+    "forecast_15m_cm",
+    "forecast_30m_cm",
+    "alert_level",
     "main_factor",
 ]
 st.subheader("Dữ liệu gần nhất")
@@ -154,9 +241,9 @@ with st.expander("Thông tin kỹ thuật"):
     st.code(
         json.dumps(
             {
-                "database": str(settings.database_path),
-                "warning_level_cm": settings.warning_level_cm,
-                "danger_level_cm": settings.danger_level_cm,
+                "api": api_base,
+                "warning_level_cm": latest.get("warning_level_cm"),
+                "overflow_level_cm": latest.get("overflow_level_cm"),
                 "latest_model_version": latest.get("model_version"),
             },
             ensure_ascii=False,

@@ -10,6 +10,7 @@ import requests
 
 from .config import MiniFloodSettings
 from .db import MiniFloodDatabase
+from .models import ALERT_LABELS
 
 
 Sender = Callable[[str], tuple[bool, str]]
@@ -107,24 +108,29 @@ class AlertManager:
     @staticmethod
     def build_message(
         timestamp: str,
-        predictions: dict,
+        forecasts: dict[int, float | None],
         features: dict[str, float],
+        station: dict,
+        alert_level: int,
         main_factor: str,
         event_type: str,
     ) -> str:
-        label_15 = predictions["15m"]["risk_label"]
-        label_30 = predictions["30m"]["risk_label"]
-        confidence_15 = max(predictions["15m"]["probabilities"]) * 100
-        confidence_30 = max(predictions["30m"]["probabilities"]) * 100
-        heading = "CẢNH BÁO NGUY CƠ NGẬP" if event_type != "recovery" else "TRẠNG THÁI ĐÃ AN TOÀN"
+        heading = "CẢNH BÁO NGUY CƠ NGẬP" if event_type != "recovery" else "TRẠNG THÁI ĐÃ HẠ MỨC"
+
+        def fmt(value: float | None) -> str:
+            return "Đang khởi động" if value is None else f"{value:.1f} cm"
+
         return "\n".join(
             [
                 "[MÔ PHỎNG THỬ NGHIỆM]",
                 "",
                 heading,
-                f"Dự báo 15 phút: {label_15} ({confidence_15:.1f}%)",
-                f"Dự báo 30 phút: {label_30} ({confidence_30:.1f}%)",
+                f"Trạng thái: {ALERT_LABELS[alert_level]}",
+                f"Dự báo 15 phút: {fmt(forecasts.get(15))}",
+                f"Dự báo 30 phút: {fmt(forecasts.get(30))}",
                 f"Mực nước hiện tại: {features.get('water_level_cm', 0.0):.1f} cm",
+                f"Ngưỡng cảnh báo: {station['warning_level_cm']:.1f} cm",
+                f"Mức tràn: {station['overflow_level_cm']:.1f} cm",
                 f"Tốc độ dâng 2 phút: {features.get('water_rise_2m_cm', features.get('water_rise_5m_cm', 0.0)):+.1f} cm",
                 f"Nguyên nhân: {main_factor}",
                 f"Thời gian đo: {timestamp}",
@@ -136,48 +142,92 @@ class AlertManager:
         telemetry_id: int | None,
         device_id: str,
         timestamp: str,
-        predictions: dict,
+        forecasts: dict[int, float | None],
         features: dict[str, float],
+        station: dict,
         main_factor: str,
-    ) -> int | None:
+    ) -> tuple[int, int | None]:
         state_key = f"alert_state:{device_id}"
         state = self.db.get_state(
             state_key,
-            {"risk_level": 0, "safe_streak": 0, "last_danger_alert_at": None},
+            {
+                "alert_level": 0,
+                "recovery_started_at": None,
+                "recovery_from_level": None,
+                "last_danger_alert_at": None,
+            },
         )
-        previous = int(state.get("risk_level", 0))
-        current = max(int(predictions["15m"]["risk_level"]), int(predictions["30m"]["risk_level"]))
-        now = _now()
+        previous = int(state.get("alert_level", 0))
+        values = [float(features.get("water_level_cm", 0.0))]
+        values.extend(float(value) for value in forecasts.values() if value is not None)
+        controlling_level = max(values)
+        warning = float(station["warning_level_cm"])
+        overflow = float(station["overflow_level_cm"])
+        if controlling_level >= overflow:
+            raw_level = 2
+        elif controlling_level >= warning:
+            raw_level = 1
+        else:
+            raw_level = 0
+
+        measured_at = datetime.fromisoformat(timestamp)
+        now = measured_at.astimezone(timezone.utc)
+        delivery_now = _now()
+        current = previous
         event_type: str | None = None
 
-        if current > previous:
+        if raw_level > previous:
+            current = raw_level
             event_type = "escalation"
-        elif current == 2:
+            state["recovery_started_at"] = None
+            state["recovery_from_level"] = None
+        elif raw_level < previous:
+            boundary = overflow if previous == 2 else warning
+            release_level = boundary - float(station["hysteresis_cm"])
+            started_raw = state.get("recovery_started_at")
+            recovery_from = state.get("recovery_from_level")
+            if controlling_level < release_level:
+                if started_raw is None or recovery_from != previous:
+                    state["recovery_started_at"] = now.isoformat()
+                    state["recovery_from_level"] = previous
+                else:
+                    started = datetime.fromisoformat(started_raw)
+                    elapsed = (now - started).total_seconds()
+                    if elapsed < 0:
+                        state["recovery_started_at"] = now.isoformat()
+                    elif elapsed >= int(station["recovery_hold_seconds"]):
+                        current = previous - 1
+                        event_type = "recovery"
+                        state["recovery_started_at"] = None
+                        state["recovery_from_level"] = None
+            else:
+                state["recovery_started_at"] = None
+                state["recovery_from_level"] = None
+        else:
+            state["recovery_started_at"] = None
+            state["recovery_from_level"] = None
+
+        if current == 2 and event_type is None:
             last_raw = state.get("last_danger_alert_at")
             last = datetime.fromisoformat(last_raw) if last_raw else None
-            if last is None or now - last >= timedelta(minutes=self.settings.reminder_minutes):
+            if last is None or delivery_now - last >= timedelta(minutes=self.settings.reminder_minutes):
                 event_type = "reminder"
 
-        if current == 0:
-            state["safe_streak"] = int(state.get("safe_streak", 0)) + 1
-            if previous > 0 and state["safe_streak"] >= 2:
-                event_type = "recovery"
-                state["risk_level"] = 0
-        else:
-            state["safe_streak"] = 0
-            state["risk_level"] = current
-
         if event_type in {"escalation", "reminder"} and current == 2:
-            state["last_danger_alert_at"] = now.isoformat()
+            state["last_danger_alert_at"] = delivery_now.isoformat()
+        state["alert_level"] = current
         self.db.set_state(state_key, state)
 
         if event_type is None:
-            return None
-        message = self.build_message(timestamp, predictions, features, main_factor, event_type)
+            return current, None
+        message = self.build_message(
+            timestamp, forecasts, features, station, current, main_factor, event_type
+        )
         event_key = f"{device_id}:{telemetry_id}:{event_type}:{current}"
-        return self.db.enqueue_alert(
+        alert_id = self.db.enqueue_alert(
             telemetry_id, device_id, event_key, event_type, current, message
         )
+        return current, alert_id
 
     def enqueue_test(self, device_id: str) -> int | None:
         stamp = _now().isoformat()

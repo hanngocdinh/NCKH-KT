@@ -1,4 +1,4 @@
-"""Huấn luyện model dự báo 15/30 phút từ dữ liệu thí nghiệm mô hình mini.
+"""Huấn luyện model hồi quy mực nước sau 15/30 phút từ dữ liệu thí nghiệm.
 
 CSV đầu vào cần có: experiment_id, device_id, sequence_no, timestamp,
 rain_interval_mm, rain_rate_mmh, water_level_cm, quality_flags.
@@ -18,8 +18,9 @@ import pandas as pd
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix, f1_score, log_loss, precision_score, recall_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -37,14 +38,6 @@ REQUIRED_COLUMNS = {
     "rain_rate_mmh",
     "water_level_cm",
 }
-
-
-def risk_from_level(level: float, warning: float, danger: float) -> int:
-    if level >= danger:
-        return 2
-    if level >= warning:
-        return 1
-    return 0
 
 
 def build_training_dataset(
@@ -82,15 +75,17 @@ def build_training_dataset(
             record = {"experiment_id": str(experiment_id), "timestamp": current_time, **features}
             complete = True
             for horizon in (15, 30):
-                end = current_time + pd.Timedelta(minutes=horizon)
-                future = group[(group["timestamp"] > current_time) & (group["timestamp"] <= end)]
-                if future.empty or future["timestamp"].max() < end - pd.Timedelta(seconds=settings.expected_interval_seconds * 0.5):
+                target_time = current_time + pd.Timedelta(minutes=horizon)
+                deltas = (group["timestamp"] - target_time).abs()
+                nearest_index = deltas.idxmin()
+                if deltas.loc[nearest_index] > pd.Timedelta(seconds=settings.expected_interval_seconds):
                     complete = False
                     break
-                max_level = float(future["water_level_cm"].max())
-                record[f"target_{horizon}m"] = risk_from_level(
-                    max_level, settings.warning_level_cm, settings.danger_level_cm
-                )
+                target_row = group.loc[nearest_index]
+                if target_row["timestamp"] <= current_time:
+                    complete = False
+                    break
+                record[f"target_{horizon}m_cm"] = float(target_row["water_level_cm"])
             if complete:
                 output.append(record)
     return pd.DataFrame(output)
@@ -111,37 +106,22 @@ def chronological_experiment_split(data: pd.DataFrame) -> tuple[pd.DataFrame, pd
     return data[data["experiment_id"].isin(train_ids)], data[data["experiment_id"].isin(test_ids)]
 
 
-def evaluate(
-    y_true: pd.Series,
-    y_pred: np.ndarray,
-    probabilities: np.ndarray | None = None,
-) -> dict[str, float]:
-    metrics = {
-        "macro_f1": round(float(f1_score(y_true, y_pred, average="macro", zero_division=0)), 6),
-        "danger_recall": round(float(recall_score(y_true, y_pred, labels=[2], average="macro", zero_division=0)), 6),
-        "danger_precision": round(float(precision_score(y_true, y_pred, labels=[2], average="macro", zero_division=0)), 6),
+def evaluate(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
+    return {
+        "mae": round(float(mean_absolute_error(y_true, y_pred)), 6),
+        "rmse": round(float(np.sqrt(mean_squared_error(y_true, y_pred))), 6),
+        "r2": round(float(r2_score(y_true, y_pred)), 6) if len(y_true) > 1 else 0.0,
     }
-    if probabilities is not None:
-        one_hot = np.eye(3)[np.asarray(y_true, dtype=int)]
-        metrics["log_loss"] = round(float(log_loss(y_true, probabilities, labels=[0, 1, 2])), 6)
-        metrics["brier_score"] = round(float(np.mean(np.sum((probabilities - one_hot) ** 2, axis=1))), 6)
-    else:
-        metrics["log_loss"] = float("nan")
-        metrics["brier_score"] = float("nan")
-    return metrics
 
 
 def baseline_outputs(
     features: pd.DataFrame,
     horizon: int,
     settings: MiniFloodSettings,
-) -> tuple[np.ndarray, np.ndarray]:
-    baseline = BaselinePredictor(settings)
+) -> np.ndarray:
+    baseline = BaselinePredictor()
     outputs = [baseline.predict_horizon(row.to_dict(), horizon) for _, row in features.iterrows()]
-    return (
-        np.asarray([item["risk_level"] for item in outputs], dtype=int),
-        np.asarray([item["probabilities"] for item in outputs], dtype=float),
-    )
+    return np.asarray(outputs, dtype=float)
 
 
 def train(input_csv: Path, output_dir: Path, settings: MiniFloodSettings) -> dict:
@@ -156,51 +136,42 @@ def train(input_csv: Path, output_dir: Path, settings: MiniFloodSettings) -> dic
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     for axis, horizon in zip(axes, (15, 30)):
-        target = f"target_{horizon}m"
+        target = f"target_{horizon}m_cm"
         X_train = train_df[list(FEATURE_NAMES)]
-        y_train = train_df[target].astype(int)
+        y_train = train_df[target].astype(float)
         X_test = test_df[list(FEATURE_NAMES)]
-        y_test = test_df[target].astype(int)
+        y_test = test_df[target].astype(float)
 
-        missing_classes = {0, 1, 2} - set(y_train.unique())
-        if missing_classes:
-            raise ValueError(
-                f"Tập train {horizon} phút thiếu lớp {sorted(missing_classes)}; "
-                "cần bổ sung lần chạy thí nghiệm trước khi huấn luyện"
-            )
-
-        model = Pipeline(
-            [
-                ("scaler", StandardScaler()),
-                (
-                    "classifier",
-                    LogisticRegression(
-                        max_iter=2000,
-                        class_weight="balanced",
-                        random_state=42,
-                    ),
-                ),
-            ]
-        )
-        baseline_pred, baseline_probs = baseline_outputs(X_test, horizon, settings)
-        baseline_metrics = evaluate(y_test, baseline_pred, baseline_probs)
+        candidates = {
+            "ridge": Pipeline([("scaler", StandardScaler()), ("regressor", Ridge(alpha=1.0))]),
+            "random_forest": RandomForestRegressor(
+                n_estimators=200,
+                max_depth=4,
+                min_samples_leaf=2,
+                random_state=42,
+            ),
+        }
+        baseline_pred = baseline_outputs(X_test, horizon, settings)
+        baseline_metrics = evaluate(y_test, baseline_pred)
         all_metrics.append({"horizon": horizon, "model": "baseline", **baseline_metrics})
 
-        model.fit(X_train, y_train)
-        pred = model.predict(X_test)
-        raw_probs = model.predict_proba(X_test)
-        probabilities = np.zeros((len(X_test), 3), dtype=float)
-        for source_index, label in enumerate(model.classes_):
-            probabilities[:, int(label)] = raw_probs[:, source_index]
-        metrics = evaluate(y_test, pred, probabilities)
-        all_metrics.append({"horizon": horizon, "model": "logistic_regression", **metrics})
-        eligible = (
-            metrics["macro_f1"] > baseline_metrics["macro_f1"]
-            and metrics["danger_recall"] >= baseline_metrics["danger_recall"]
-        )
-        best_name = "logistic_regression" if eligible else "baseline"
-        best_model = model if eligible else None
-        best_pred = pred if eligible else baseline_pred
+        fitted: dict[str, object] = {}
+        predictions: dict[str, np.ndarray] = {}
+        candidate_metrics: dict[str, dict[str, float]] = {}
+        for name, model in candidates.items():
+            model.fit(X_train, y_train)
+            pred = np.maximum(0.0, model.predict(X_test))
+            metrics = evaluate(y_test, pred)
+            fitted[name] = model
+            predictions[name] = pred
+            candidate_metrics[name] = metrics
+            all_metrics.append({"horizon": horizon, "model": name, **metrics})
+
+        candidate_name = min(candidate_metrics, key=lambda name: candidate_metrics[name]["mae"])
+        eligible = candidate_metrics[candidate_name]["mae"] < baseline_metrics["mae"]
+        best_name = candidate_name if eligible else "baseline"
+        best_model = fitted[best_name] if eligible else None
+        best_pred = predictions[best_name] if eligible else baseline_pred
 
         selected[horizon] = best_name
         if best_model is not None:
@@ -210,32 +181,26 @@ def train(input_csv: Path, output_dir: Path, settings: MiniFloodSettings) -> dic
             if stale.exists():
                 stale.unlink()
 
-        cm = confusion_matrix(y_test, best_pred, labels=[0, 1, 2])
-        axis.imshow(cm, cmap="Blues")
+        axis.scatter(y_test, best_pred, alpha=0.65)
+        bounds = [float(min(y_test.min(), best_pred.min())), float(max(y_test.max(), best_pred.max()))]
+        axis.plot(bounds, bounds, "--", color="gray")
         axis.set_title(f"{horizon} phút — {best_name}")
-        axis.set_xlabel("Dự báo")
-        axis.set_ylabel("Thực tế")
-        axis.set_xticks([0, 1, 2])
-        axis.set_yticks([0, 1, 2])
-        for i in range(3):
-            for j in range(3):
-                axis.text(j, i, int(cm[i, j]), ha="center", va="center")
+        axis.set_xlabel("Mực nước thực tế (cm)")
+        axis.set_ylabel("Mực nước dự báo (cm)")
 
     plt.tight_layout()
-    plt.savefig(output_dir / "mini_flood_confusion_matrices.png", dpi=180)
+    plt.savefig(output_dir / "mini_flood_regression_validation.png", dpi=180)
     plt.close(fig)
     pd.DataFrame(all_metrics).to_csv(output_dir / "mini_flood_benchmark.csv", index=False)
 
     learned_ready = all(name != "baseline" for name in selected.values())
     metadata = {
-        "model_version": f"mini-flood-v1-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "model_version": f"mini-flood-v2-{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "created_at": datetime.now().astimezone().isoformat(),
         "features": list(FEATURE_NAMES),
         "horizons_minutes": [15, 30],
-        "warning_level_cm": settings.warning_level_cm,
-        "danger_level_cm": settings.danger_level_cm,
         "selected_models": {str(k): v for k, v in selected.items()},
-        "algorithm_policy": "logistic_regression_only",
+        "algorithm_policy": "lowest_mae_of_ridge_random_forest_if_better_than_baseline",
         "learned_models_ready": learned_ready,
         "train_experiments": sorted(train_df["experiment_id"].unique().tolist()),
         "test_experiments": sorted(test_df["experiment_id"].unique().tolist()),
@@ -250,7 +215,11 @@ def train(input_csv: Path, output_dir: Path, settings: MiniFloodSettings) -> dic
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train model mô hình mini dự báo ngập 15/30 phút")
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(description="Train model hồi quy mực nước sau 15/30 phút")
     parser.add_argument("--input", type=Path, required=True, help="CSV telemetry có experiment_id")
     parser.add_argument("--output-dir", type=Path, default=Path("models"))
     args = parser.parse_args()

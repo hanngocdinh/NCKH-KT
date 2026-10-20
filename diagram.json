@@ -18,6 +18,13 @@
       "attrs": { "distance": "28" }
     },
     {
+      "type": "wokwi-text",
+      "id": "label_water",
+      "top": -205,
+      "left": 145,
+      "attrs": { "text": "CAM BIEN 1: MUC NUOC" }
+    },
+    {
       "type": "wokwi-hc-sr04",
       "id": "ultrasonic_rain",
       "top": -140,
@@ -25,11 +32,25 @@
       "attrs": { "distance": "20" }
     },
     {
+      "type": "wokwi-text",
+      "id": "label_rain",
+      "top": -205,
+      "left": -235,
+      "attrs": { "text": "CAM BIEN 2: MUA" }
+    },
+    {
       "type": "wokwi-potentiometer",
       "id": "rain_pot",
       "top": 140,
       "left": -180,
       "attrs": { "label": "Simulate Rain POT (mm/h)" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "label_rain_pot",
+      "top": 245,
+      "left": -230,
+      "attrs": { "text": "NUM MUA DU PHONG" }
     }
   ],
   "connections": [

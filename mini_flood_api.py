@@ -17,7 +17,8 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, WebS
 from fastapi.responses import StreamingResponse
 
 from mini_flood import MiniFloodService, MiniFloodSettings
-from mini_flood.schemas import ExperimentStart, TelemetryPayload, TelemetryResponse
+from mini_flood.schemas import ExperimentStart, StationConfigUpdate, TelemetryPayload, TelemetryResponse
+from mini_flood.service import StationNotConfiguredError
 
 
 def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
@@ -42,8 +43,8 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
 
     api = FastAPI(
         title="Mini Flood AI API",
-        version="1.0.0",
-        description="[MÔ PHỎNG THỬ NGHIỆM] Nhận telemetry và dự báo nguy cơ ngập 15/30 phút.",
+        version="2.0.0",
+        description="[MÔ PHỎNG THỬ NGHIỆM] Dự báo mực nước sau 15/30 phút.",
         lifespan=lifespan,
     )
     api.state.service = service
@@ -52,7 +53,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         if not device_key or device_key != resolved.device_api_key:
             raise HTTPException(status_code=401, detail="X-Device-Key không hợp lệ")
 
-    @api.get("/api/v1/health")
+    @api.get("/api/v2/health")
     def health() -> dict:
         return {
             "status": "ok",
@@ -63,18 +64,24 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             "active_subscribers": service.broadcaster.subscriber_count,
         }
 
-    @api.post("/api/v1/telemetry", response_model=TelemetryResponse)
+    @api.post("/api/v2/telemetry", response_model=TelemetryResponse)
     def telemetry(
         payload: TelemetryPayload,
         background_tasks: BackgroundTasks,
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
     ) -> dict:
         authorize(x_device_key)
-        result = service.ingest(payload)
-        background_tasks.add_task(service.delivery_worker.process_due)
+        try:
+            result = service.ingest(payload)
+        except StationNotConfiguredError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # Test và các môi trường đã tắt notification worker không được phép
+        # phát sinh side effect ra Telegram/email thật.
+        if resolved.notification_worker_enabled:
+            background_tasks.add_task(service.delivery_worker.process_due)
         return result
 
-    @api.get("/api/v1/stations/{device_id}/latest")
+    @api.get("/api/v2/stations/{device_id}/latest")
     def latest(
         device_id: str,
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
@@ -85,7 +92,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Chưa có dữ liệu cho thiết bị")
         return row
 
-    @api.get("/api/v1/stations/{device_id}/history")
+    @api.get("/api/v2/stations/{device_id}/history")
     def history(
         device_id: str,
         limit: int = Query(default=200, ge=1, le=5000),
@@ -94,7 +101,37 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         authorize(x_device_key)
         return {"device_id": device_id, "items": service.db.history(device_id, limit)}
 
-    @api.post("/api/v1/notifications/test")
+    @api.get("/api/v2/stations/{device_id}/config")
+    def station_config(
+        device_id: str,
+        x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
+    ) -> dict:
+        authorize(x_device_key)
+        item = service.db.get_station_config(device_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Thiết bị chưa có cấu hình trạm")
+        return item
+
+    @api.put("/api/v2/stations/{device_id}/config")
+    def update_station_config(
+        device_id: str,
+        request: StationConfigUpdate,
+        x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
+    ) -> dict:
+        authorize(x_device_key)
+        item = service.db.upsert_station_config(device_id=device_id, **request.model_dump())
+        service.db.set_state(
+            f"alert_state:{device_id}",
+            {
+                "alert_level": 0,
+                "recovery_started_at": None,
+                "recovery_from_level": None,
+                "last_danger_alert_at": None,
+            },
+        )
+        return item
+
+    @api.post("/api/v2/notifications/test")
     def notification_test(
         device_id: str = "mini-flood-station-01",
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
@@ -104,7 +141,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         processed = service.delivery_worker.process_due()
         return {"queued": alert_id is not None, "alert_id": alert_id, "deliveries_processed": processed}
 
-    @api.post("/api/v1/experiments/start")
+    @api.post("/api/v2/experiments/start")
     def start_experiment(
         request: ExperimentStart,
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
@@ -114,7 +151,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         service.db.set_state(f"active_experiment:{request.device_id}", state)
         return {"active": True, **state}
 
-    @api.post("/api/v1/experiments/stop")
+    @api.post("/api/v2/experiments/stop")
     def stop_experiment(
         device_id: str = "mini-flood-station-01",
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
@@ -126,7 +163,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         )
         return {"active": False, "device_id": device_id}
 
-    @api.get("/api/v1/experiments/export.csv")
+    @api.get("/api/v2/experiments/export.csv")
     def export_experiments(
         device_id: str | None = None,
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
@@ -147,7 +184,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             headers={"Content-Disposition": "attachment; filename=telemetry_experiments.csv"},
         )
 
-    @api.get("/api/v1/stream/sse")
+    @api.get("/api/v2/stream/sse")
     async def stream_sse(
         device_id: str | None = None,
     ) -> StreamingResponse:
@@ -179,7 +216,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             },
         )
 
-    @api.websocket("/api/v1/stream/ws")
+    @api.websocket("/api/v2/stream/ws")
     async def stream_ws(websocket: WebSocket, device_id: str | None = None):
         """Lắng nghe dữ liệu đo mực nước và lượng mưa thời gian thực qua WebSocket."""
         await websocket.accept()

@@ -17,8 +17,6 @@ def build_test_client(tmp_path: Path):
         database_path=db_path,
         model_dir=tmp_path / "models",
         device_api_key="iot-test-key",
-        warning_level_cm=15.0,
-        danger_level_cm=25.0,
         notification_worker_enabled=False,
     )
     app = create_app(settings)
@@ -53,7 +51,7 @@ def test_scenario_normal(tmp_path):
     for i in range(20):
         t = end - timedelta(minutes=19 - i)
         payload = make_payload(seq=i + 1, stamp=t, water=8.0, rain=2.0)
-        res = client.post("/api/v1/telemetry", json=payload, headers=headers)
+        res = client.post("/api/v2/telemetry", json=payload, headers=headers)
         assert res.status_code == 200
         responses.append(res.json())
 
@@ -67,9 +65,9 @@ def test_scenario_normal(tmp_path):
     assert "predictions" not in last_res
     latest = db.latest("mini-flood-station-01")
     assert latest is not None
-    assert latest["risk_15m"] == 0
-    assert latest["risk_30m"] == 0
-    assert latest["rule_override"] == 0
+    assert latest["alert_level"] == 0
+    assert latest["forecast_15m_cm"] == pytest.approx(8.0)
+    assert latest["safety_override"] == 0
 
     # Xác nhận cơ sở dữ liệu không sinh bất kỳ cảnh báo nào
     with db.connect() as conn:
@@ -97,7 +95,7 @@ def test_scenario_warning(tmp_path):
             water = 10.0 + (i - 10) * 1.0  # lên đến 19.0 cm
             rain = 45.0
         payload = make_payload(seq=i + 1, stamp=t, water=water, rain=rain)
-        res = client.post("/api/v1/telemetry", json=payload, headers=headers)
+        res = client.post("/api/v2/telemetry", json=payload, headers=headers)
         assert res.status_code == 200
         responses.append(res.json())
 
@@ -106,7 +104,8 @@ def test_scenario_warning(tmp_path):
     assert "predictions" not in last_res
     latest = db.latest("mini-flood-station-01")
     assert latest is not None
-    assert latest["risk_15m"] >= 1
+    assert latest["alert_level"] >= 1
+    assert latest["forecast_15m_cm"] is not None
     assert latest["main_factor"] is not None
 
     # Kiểm tra database: AlertManager phải enqueue một sự kiện escalation
@@ -116,7 +115,7 @@ def test_scenario_warning(tmp_path):
         ).fetchall()
         assert len(alerts) >= 1
         first_alert = dict(alerts[0])
-        assert first_alert["risk_level"] >= 1
+        assert first_alert["alert_level"] >= 1
         assert "CẢNH BÁO NGUY CƠ NGẬP" in first_alert["message"]
 
         # Kiểm tra bảng delivery_attempts: background worker tự động xử lý khi nhận telemetry
@@ -139,8 +138,8 @@ def test_scenario_danger(tmp_path):
     headers = {"X-Device-Key": "iot-test-key"}
 
     now = datetime.now(timezone.utc)
-    payload = make_payload(seq=1, stamp=now, water=30.0, rain=60.0)
-    res = client.post("/api/v1/telemetry", json=payload, headers=headers)
+    payload = make_payload(seq=1, stamp=now, water=42.0, rain=60.0)
+    res = client.post("/api/v2/telemetry", json=payload, headers=headers)
     assert res.status_code == 200
 
     data = res.json()
@@ -148,14 +147,13 @@ def test_scenario_danger(tmp_path):
     assert "predictions" not in data
     latest = db.latest("mini-flood-station-01")
     assert latest is not None
-    assert latest["rule_override"] == 1
-    assert latest["risk_15m"] == 2
-    assert latest["risk_30m"] == 2
+    assert latest["safety_override"] == 1
+    assert latest["alert_level"] == 2
     assert "vượt ngưỡng nguy hiểm" in latest["main_factor"]
 
     # Kiểm tra database: AlertManager phải enqueue ngay một sự kiện escalation Mức 2
     with db.connect() as conn:
-        alerts = conn.execute("SELECT * FROM alert_events WHERE risk_level = 2").fetchall()
+        alerts = conn.execute("SELECT * FROM alert_events WHERE alert_level = 2").fetchall()
         assert len(alerts) == 1
         alert = dict(alerts[0])
         assert alert["event_type"] == "escalation"

@@ -24,7 +24,7 @@ def test_client(tmp_path: Path):
 
 
 def test_health_includes_subscribers_count(test_client: TestClient):
-    resp = test_client.get("/api/v1/health")
+    resp = test_client.get("/api/v2/health")
     assert resp.status_code == 200
     data = resp.json()
     assert "active_subscribers" in data
@@ -32,7 +32,7 @@ def test_health_includes_subscribers_count(test_client: TestClient):
 
 
 def test_websocket_streaming_receives_telemetry_event(test_client: TestClient):
-    with test_client.websocket_connect("/api/v1/stream/ws") as websocket:
+    with test_client.websocket_connect("/api/v2/stream/ws") as websocket:
         # Nhận tin nhắn chào mừng kết nối
         welcome = websocket.receive_json()
         assert welcome["type"] == "connected"
@@ -50,7 +50,7 @@ def test_websocket_streaming_receives_telemetry_event(test_client: TestClient):
             "quality_flags": [],
         }
         post_resp = test_client.post(
-            "/api/v1/telemetry",
+            "/api/v2/telemetry",
             json=payload,
             headers={"X-Device-Key": "test-key"},
         )
@@ -65,7 +65,7 @@ def test_websocket_streaming_receives_telemetry_event(test_client: TestClient):
 
 
 def test_websocket_ping_pong(test_client: TestClient):
-    with test_client.websocket_connect("/api/v1/stream/ws") as websocket:
+    with test_client.websocket_connect("/api/v2/stream/ws") as websocket:
         websocket.receive_json()  # welcome
         websocket.send_text("ping")
         reply = websocket.receive_text()

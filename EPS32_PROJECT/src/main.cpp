@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 /*
   ESP32 HTTP telemetry cho prototype mô hình mini.
   Wokwi dùng biến trở làm cảm biến mưa và HC-SR04 làm cảm biến mực nước.
@@ -19,16 +21,19 @@
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASSWORD = "";
 // Khi mô phỏng bằng Wokwi Extension trên VS Code:
-const char* API_URL = "http://host.wokwi.internal:8000/api/v1/telemetry";
-// Khi nạp vào ESP32 mạch thật cùng mạng LAN: thay bằng IP máy tính (vd: "http://192.168.1.17:8000/api/v1/telemetry")
+const char* API_URL = "http://host.wokwi.internal:8000/api/v2/telemetry";
+// Khi nạp vào ESP32 mạch thật cùng mạng LAN: thay bằng IP máy tính (vd: "http://192.168.1.17:8000/api/v2/telemetry")
 const char* DEVICE_KEY = "change-me";
 const char* DEVICE_ID = "mini-flood-station-01";
 
+// Khoảng cách từ đầu dò xuống đáy để đổi khoảng cách siêu âm thành water_level_cm.
+// Đây KHÔNG phải ngưỡng tràn; ngưỡng tràn được cấu hình động ở backend/dashboard.
 const float SENSOR_MOUNT_HEIGHT_CM = 40.0;
 const float RAIN_GAUGE_HEIGHT_CM = 30.0;
 // Test nhanh: 5 giây/lần. Khi nạp mạch thật: đổi lại thành 60000
 const unsigned long SEND_INTERVAL_MS = 5000;
 const int BUFFER_SIZE = 100;
+String bootId;
 
 struct TelemetryRecord {
   unsigned long sequenceNo;
@@ -97,6 +102,7 @@ String toJson(const TelemetryRecord& record) {
   String json = "{";
   json += "\"schema_version\":1,";
   json += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+  json += "\"boot_id\":\"" + bootId + "\",";
   json += "\"sequence_no\":" + String(record.sequenceNo) + ",";
   json += "\"timestamp\":\"" + record.timestamp + "\",";
   json += "\"rain_interval_mm\":" + String(record.rainIntervalMM, 3) + ",";
@@ -108,16 +114,30 @@ String toJson(const TelemetryRecord& record) {
 }
 
 bool postRecord(const TelemetryRecord& record) {
-  if (WiFi.status() != WL_CONNECTED) return false;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("[HTTP] Bo qua seq=%lu: Wi-Fi chua ket noi\n", record.sequenceNo);
+    return false;
+  }
+
+  String payload = toJson(record);
   HTTPClient http;
   http.setTimeout(5000);
-  http.begin(API_URL);
+  if (!http.begin(API_URL)) {
+    Serial.printf("[HTTP] Khong the khoi tao URL: %s\n", API_URL);
+    return false;
+  }
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Key", DEVICE_KEY);
-  int status = http.POST(toJson(record));
+  Serial.printf("[HTTP] POST seq=%lu -> %s\n", record.sequenceNo, API_URL);
+  Serial.printf("[HTTP] Payload: %s\n", payload.c_str());
+  int status = http.POST(payload);
   String response = http.getString();
   http.end();
-  Serial.printf("HTTP %d %s\n", status, response.c_str());
+  if (status < 0) {
+    Serial.printf("[HTTP] Loi ket noi %d: %s\n", status, HTTPClient::errorToString(status).c_str());
+  } else {
+    Serial.printf("[HTTP] Phan hoi %d: %s\n", status, response.c_str());
+  }
   return status >= 200 && status < 300;
 }
 
@@ -132,29 +152,48 @@ void flushQueue() {
 
 void ensureWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
+  Serial.printf("[WiFi] Dang ket noi %s", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   unsigned long started = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - started < 8000) {
+    Serial.print(".");
     delay(250);
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] Da ket noi, IP=%s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.printf("\n[WiFi] That bai, status=%d; se thu lai\n", WiFi.status());
   }
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(500);
+  Serial.println("\n[BOOT] Mini Flood firmware V2 signal-first");
+  Serial.printf("[BOOT] Device: %s\n", DEVICE_ID);
+  char bootIdBuffer[18];
+  snprintf(
+    bootIdBuffer,
+    sizeof(bootIdBuffer),
+    "%08lx-%08lx",
+    (unsigned long)esp_random(),
+    (unsigned long)esp_random()
+  );
+  bootId = String(bootIdBuffer);
+  Serial.printf("[BOOT] Session: %s\n", bootId.c_str());
+  Serial.printf("[BOOT] API: %s\n", API_URL);
   pinMode(PIN_TRIG_WATER, OUTPUT);
   pinMode(PIN_ECHO_WATER, INPUT);
   pinMode(PIN_TRIG_RAIN, OUTPUT);
   pinMode(PIN_ECHO_RAIN, INPUT);
   pinMode(PIN_RAIN_POT, INPUT);
   preferences.begin("mini-flood", false);
-  ensureWiFi();
   configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com");
 }
 
 void loop() {
-  ensureWiFi();
-  flushQueue();
-
+  // Luôn lấy mẫu trước khi thử kết nối mạng. Nhờ vậy cảm biến vẫn hoạt động
+  // và có log [SENSOR] ngay cả khi Wi-Fi/backend đang mất kết nối.
   if (lastMeasureAt == 0 || millis() - lastMeasureAt >= SEND_INTERVAL_MS) {
     unsigned long elapsedMs = lastMeasureAt == 0 ? SEND_INTERVAL_MS : millis() - lastMeasureAt;
     lastMeasureAt = millis();
@@ -180,7 +219,16 @@ void loop() {
     record.waterLevelCM = waterLevelCM;
     record.qualityFlags = waterValid ? "[]" : "[\"water_sensor_timeout\"]";
     enqueueRecord(record);
-    flushQueue();
+    Serial.printf(
+      "[SENSOR] seq=%lu water=%.2fcm rain=%.2fmm/h queue=%d\n",
+      sequenceNo,
+      waterLevelCM,
+      rainRateMMH,
+      queueCount
+    );
   }
+
+  ensureWiFi();
+  flushQueue();
   delay(250);
 }

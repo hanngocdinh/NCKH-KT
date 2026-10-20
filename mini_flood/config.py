@@ -4,6 +4,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 FEATURE_NAMES = (
     "rain_rate_mmh",
@@ -25,8 +31,11 @@ class MiniFloodSettings:
     database_path: Path = Path("mini_flood.sqlite3")
     model_dir: Path = Path("models")
     device_api_key: str = "change-me"
-    warning_level_cm: float = 15.0
-    danger_level_cm: float = 25.0
+    default_device_id: str = "mini-flood-station-01"
+    default_overflow_level_cm: float = 40.0
+    default_warning_margin_cm: float = 10.0
+    default_hysteresis_cm: float = 2.0
+    default_recovery_hold_seconds: int = 120
     reminder_minutes: int = 30
     expected_interval_seconds: int = 60
     notification_worker_enabled: bool = True
@@ -38,8 +47,11 @@ class MiniFloodSettings:
             database_path=Path(os.getenv("MINI_FLOOD_DB", "mini_flood.sqlite3")),
             model_dir=Path(os.getenv("MINI_FLOOD_MODEL_DIR", "models")),
             device_api_key=os.getenv("MINI_FLOOD_DEVICE_KEY", "change-me"),
-            warning_level_cm=float(os.getenv("MINI_FLOOD_WARNING_CM", "15")),
-            danger_level_cm=float(os.getenv("MINI_FLOOD_DANGER_CM", "25")),
+            default_device_id=os.getenv("MINI_FLOOD_DEFAULT_DEVICE_ID", "mini-flood-station-01"),
+            default_overflow_level_cm=float(os.getenv("MINI_FLOOD_DEFAULT_OVERFLOW_CM", "40")),
+            default_warning_margin_cm=float(os.getenv("MINI_FLOOD_DEFAULT_WARNING_MARGIN_CM", "10")),
+            default_hysteresis_cm=float(os.getenv("MINI_FLOOD_DEFAULT_HYSTERESIS_CM", "2")),
+            default_recovery_hold_seconds=int(os.getenv("MINI_FLOOD_DEFAULT_RECOVERY_HOLD_SECONDS", "120")),
             reminder_minutes=int(os.getenv("MINI_FLOOD_REMINDER_MINUTES", "30")),
             expected_interval_seconds=int(os.getenv("MINI_FLOOD_INTERVAL_SECONDS", "60")),
             notification_worker_enabled=_env_bool("MINI_FLOOD_NOTIFICATION_WORKER", True),

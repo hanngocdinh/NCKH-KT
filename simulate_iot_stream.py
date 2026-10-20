@@ -12,6 +12,7 @@ import argparse
 import os
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -22,15 +23,17 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     except Exception:
         pass
 
-API_URL = os.getenv("MINI_FLOOD_API_URL", "http://localhost:8000/api/v1/telemetry")
+API_URL = os.getenv("MINI_FLOOD_API_URL", "http://localhost:8000/api/v2/telemetry")
 DEVICE_KEY = os.getenv("MINI_FLOOD_DEVICE_KEY", "change-me")
 DEVICE_ID = "mini-flood-station-01"
+BOOT_ID = f"sim-{uuid.uuid4().hex[:16]}"
 
 
 def send_telemetry(seq: int, ts: datetime, rain_mm: float, rain_rate: float, water_cm: float) -> dict:
     payload = {
         "schema_version": 1,
         "device_id": DEVICE_ID,
+        "boot_id": BOOT_ID,
         "sequence_no": seq,
         "timestamp": ts.isoformat(),
         "rain_interval_mm": round(rain_mm, 3),
@@ -54,7 +57,6 @@ def run_scenario(scenario: str, count: int, interval_seconds: float):
     print(f"📡 Thiết bị giả lập: {DEVICE_ID} (2 cảm biến siêu âm)")
     print(f"=======================================================\n")
 
-    base_time = datetime.now(timezone.utc) - timedelta(minutes=count)
     seq = int(time.time()) % 100000
 
     if scenario == "normal":
@@ -89,6 +91,9 @@ def run_scenario(scenario: str, count: int, interval_seconds: float):
         sys.exit(1)
 
     total = len(records)
+    # Dùng số bản ghi thực tế (flow có 30 bản ghi, không phụ thuộc --count)
+    # để bản ghi cuối luôn rơi vào thời điểm hiện tại, không bị đánh dấu tương lai.
+    base_time = datetime.now(timezone.utc) - timedelta(minutes=total)
     for idx, (rain_rate, water_cm) in enumerate(records, start=1):
         seq += 1
         curr_time = base_time + timedelta(minutes=idx)

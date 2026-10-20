@@ -1,17 +1,17 @@
-# Mini Flood AI
+# Mini Flood AI V2
 
-Prototype AI–IoT dự báo nguy cơ ngập cục bộ trước 15 và 30 phút từ dữ liệu cảm biến mưa và mực nước.
+Prototype AI–IoT dự báo **mực nước sau 15 và 30 phút** từ dữ liệu cảm biến mưa và mực nước.
 
-> **MÔ PHỎNG THỬ NGHIỆM:** kết quả chỉ dùng để kiểm chứng nguyên lý trên mô hình vật lý thu nhỏ, không phải dự báo vận hành cho Hội An.
+> **MÔ PHỎNG THỬ NGHIỆM:** kết quả dùng để kiểm chứng nguyên lý trên mô hình vật lý thu nhỏ, không phải hệ thống cảnh báo vận hành cho Hội An.
 
-## Phạm vi V1
+## Thiết kế V2
 
-- ESP32 chỉ đo và gửi telemetry qua HTTP.
-- Backend FastAPI kiểm tra, lưu SQLite và tạo đặc trưng.
-- Hai model Multinomial Logistic Regression dự báo cho 15 và 30 phút.
-- Quy tắc ngưỡng trên backend đóng vai trò baseline và lớp bảo vệ.
-- Dashboard, Telegram và email cung cấp thông tin cho người dùng.
-- Không có lệnh điều khiển, đèn hoặc còi phản hồi từ backend về ESP32.
+- ESP32 đo và gửi telemetry tới FastAPI qua HTTP.
+- Ridge Regression và Random Forest nông được so sánh với baseline chiếu tuyến tính; model có MAE tốt nhất được chọn riêng cho từng horizon.
+- AI chỉ dự báo `forecast_15m_cm` và `forecast_30m_cm`.
+- Backend suy ra trạng thái An toàn/Cảnh báo/Nguy hiểm từ cấu hình động của từng `device_id`.
+- Dashboard cho phép chỉnh mức tràn, vùng đệm cảnh báo, hysteresis và thời gian ổn định khi hạ mức.
+- SQLite lưu telemetry, forecast, cấu hình trạm và hàng đợi Telegram/email.
 
 ## Bốn đặc trưng AI
 
@@ -19,23 +19,21 @@ Prototype AI–IoT dự báo nguy cơ ngập cục bộ trước 15 và 30 phút
 |---|---|
 | `rain_rate_mmh` | Cường độ mưa hiện tại |
 | `rain_sum_5m` | Mưa tích lũy 5 phút |
-| `water_level_cm` | Mực nước hiện tại |
-| `water_rise_2m_cm` | Tốc độ dâng nước trong 2 phút |
+| `water_level_cm` | Mực nước hiện tại tính từ đáy |
+| `water_rise_2m_cm` | Mức thay đổi của nước trong 2 phút |
 
-## Cấu trúc repository
+## Ngưỡng động
 
-```text
-mini_flood/                 Backend, feature engine, model và thông báo
-mini_flood_api.py           Entry point FastAPI
-app_mini_flood_dashboard.py Dashboard Streamlit
-train_mini_flood_models.py  Huấn luyện Logistic Regression 15/30 phút
-firmware/esp32_http/        Firmware ESP32 chỉ gửi telemetry
-tests/                      Kiểm thử pipeline V1
-docs/                       Proposal và hướng dẫn V1
-models/                     Model V1 sinh ra sau khi huấn luyện
-```
+Trạm demo `mini-flood-station-01` được seed với:
 
-## Khởi chạy nhanh
+- Mức tràn: 40 cm.
+- Vùng đệm: 10 cm, nên ngưỡng cảnh báo là 30 cm.
+- Hysteresis: 2 cm.
+- Thời gian ổn định trước khi hạ mức: 120 giây.
+
+`SENSOR_MOUNT_HEIGHT_CM` trong firmware là khoảng cách từ đầu dò đến đáy để quy đổi phép đo. Nó không phải mức tràn. `overflow_level_cm` nằm trong cấu hình backend và có thể đổi trên dashboard mà không huấn luyện lại AI.
+
+## Khởi chạy
 
 ```powershell
 python -m venv .venv
@@ -54,25 +52,17 @@ Terminal khác:
 streamlit run app_mini_flood_dashboard.py
 ```
 
-- API health: `http://localhost:8000/api/v1/health`
+- Health: `http://localhost:8000/api/v2/health`
 - Swagger: `http://localhost:8000/docs`
 - Dashboard: `http://localhost:8501`
 
-## Huấn luyện
-
-Sau khi thu thập ít nhất ba lần chạy cho mỗi kịch bản:
+## Huấn luyện và kiểm thử
 
 ```powershell
 python train_mini_flood_models.py --input telemetry_experiments.csv --output-dir models
-```
-
-Khởi động lại API sau khi train để nạp model mới. Nếu model chưa đạt tiêu chí hoặc chưa tồn tại, backend dùng baseline theo ngưỡng.
-
-## Kiểm thử
-
-```powershell
 pytest -q
 ```
 
-Xem [RUNBOOK.md](RUNBOOK.md) để biết quy trình vận hành, [Kế hoạch thu thập dữ liệu thật & Cảnh báo Telegram](docs/KE_HOACH_TRAIN_DU_LIEU_THAT_VA_CANH_BAO_TELEGRAM.md), [Hướng dẫn kiểm thử thủ công Wokwi & IoT](docs/HUONG_DAN_TEST_THU_CONG_WOKWI_IOT.md), và [Proposal V1](docs/DE_XUAT_AI_IOT_DU_BAO_NGAP_V1.md) để biết phạm vi nghiên cứu.
+Model chưa đạt MAE tốt hơn baseline sẽ không được sử dụng. Xem [RUNBOOK.md](RUNBOOK.md) và [hướng dẫn HTTP V2](docs/MINI_FLOOD_HTTP_GUIDE.md) để vận hành hệ thống.
 
+Xem [kiến trúc hệ thống](docs/ARCHITECTURE.md) để hiểu luồng ESP32/Wokwi, API, dự báo, ngưỡng động, chống trùng bằng `boot_id` và kênh cảnh báo.

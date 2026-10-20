@@ -52,7 +52,7 @@ models/mini_flood_15m.joblib
 models/mini_flood_30m.joblib
 models/mini_flood_metadata.json
 models/mini_flood_benchmark.csv
-models/mini_flood_confusion_matrices.png
+models/mini_flood_regression_validation.png
 telemetry_experiments.csv
 
 # Intermediate document render artifacts

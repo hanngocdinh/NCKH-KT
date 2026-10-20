@@ -1,4 +1,4 @@
-# Model artifacts của V1
+# Model artifacts của V2
 
 Thư mục này chứa model sinh ra bởi:
 
@@ -6,4 +6,4 @@ Thư mục này chứa model sinh ra bởi:
 python train_mini_flood_models.py --input telemetry_experiments.csv --output-dir models
 ```
 
-Khi chưa có file model được huấn luyện, backend tự động sử dụng bộ dự báo quy tắc ngưỡng `mini-flood-baseline-v1`.
+Mỗi horizon so sánh Ridge Regression và Random Forest nông với baseline chiếu tuyến tính. Chỉ model có MAE thấp hơn baseline mới được lưu và nạp. Khi chưa có learned model phù hợp, backend dùng `mini-flood-regression-baseline-v2`.

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """push_to_google_docs.py.
 
-Đẩy trực tiếp nội dung báo cáo từ docs/NOI_DUNG_BAO_CAO_GOOGLE_DOCS.md
+Đẩy trực tiếp nội dung báo cáo V2 từ docs/BAO_CAO_NGHIEN_CUU_KHOA_HOC_AI_IOT.md
 lên Google Docs: https://docs.google.com/document/d/1wAQIVk8ZPgR4LHY94oAhMgj-2SliOxVTHJbj61yCKnU
 """
 
@@ -25,7 +25,7 @@ DOCUMENT_ID = "1wAQIVk8ZPgR4LHY94oAhMgj-2SliOxVTHJbj61yCKnU"
 BASE_DIR = Path(__file__).resolve().parent
 CLIENT_SECRET_FILE = BASE_DIR / "archive" / "google_docs_oauth" / "client_secret.json"
 TOKEN_FILE = BASE_DIR / "archive" / "google_docs_oauth" / "token.json"
-DOCS_CONTENT_FILE = BASE_DIR / "docs" / "NOI_DUNG_BAO_CAO_GOOGLE_DOCS.md"
+DOCS_CONTENT_FILE = BASE_DIR / "docs" / "BAO_CAO_NGHIEN_CUU_KHOA_HOC_AI_IOT.md"
 
 SCOPES = [
     "https://www.googleapis.com/auth/documents",

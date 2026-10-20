@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import joblib
@@ -10,119 +9,76 @@ import pandas as pd
 from .config import FEATURE_NAMES, MiniFloodSettings
 
 
-RISK_LABELS = {0: "An toàn", 1: "Cảnh báo", 2: "Nguy hiểm"}
-
-
-def _probabilities_for_level(level: int) -> list[float]:
-    mapping = {
-        0: [0.85, 0.12, 0.03],
-        1: [0.12, 0.76, 0.12],
-        2: [0.03, 0.12, 0.85],
-    }
-    return mapping[level]
+ALERT_LABELS = {0: "An toàn", 1: "Cảnh báo", 2: "Nguy hiểm"}
 
 
 class BaselinePredictor:
-    """Baseline minh bạch dùng trong giai đoạn chưa đủ dữ liệu huấn luyện."""
+    """Baseline hồi quy minh bạch: chiếu tuyến tính tốc độ dâng gần nhất."""
 
-    def __init__(self, settings: MiniFloodSettings):
-        self.settings = settings
-
-    def predict_horizon(self, features: dict[str, float], horizon_minutes: int) -> dict[str, Any]:
-        # Dùng water_rise_2m_cm để chiếu tuyến tính mực nước tương lai
-        rise_per_minute = max(0.0, features["water_rise_2m_cm"] / 2.0)
-        projected = features["water_level_cm"] + rise_per_minute * horizon_minutes
-        if features["water_level_cm"] >= self.settings.danger_level_cm or projected >= self.settings.danger_level_cm:
-            level = 2
-        elif (
-            features["water_level_cm"] >= self.settings.warning_level_cm
-            or projected >= self.settings.warning_level_cm
-            or features["rain_rate_mmh"] >= 30
-            or features["water_rise_2m_cm"] >= 1
-        ):
-            level = 1
-        else:
-            level = 0
-        return {
-            "risk_level": level,
-            "risk_label": RISK_LABELS[level],
-            "probabilities": _probabilities_for_level(level),
-        }
+    @staticmethod
+    def predict_horizon(features: dict[str, float], horizon_minutes: int) -> float:
+        rise_per_minute = float(features["water_rise_2m_cm"]) / 2.0
+        projected = float(features["water_level_cm"]) + rise_per_minute * horizon_minutes
+        return round(max(0.0, projected), 4)
 
 
 class MiniFloodModelRegistry:
     def __init__(self, settings: MiniFloodSettings):
         self.settings = settings
-        self.baseline = BaselinePredictor(settings)
+        self.baseline = BaselinePredictor()
         self.models: dict[int, Any] = {}
-        self.version = "mini-flood-baseline-v1"
+        self.selected_models: dict[int, str] = {15: "baseline", 30: "baseline"}
+        self.version = "mini-flood-regression-baseline-v2"
         self._load()
 
     def _load(self) -> None:
         metadata_path = self.settings.model_dir / "mini_flood_metadata.json"
-        metadata: dict[str, Any] = {}
-        if metadata_path.exists():
-            try:
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                metadata = {}
+        if not metadata_path.exists():
+            return
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
         if metadata.get("features") != list(FEATURE_NAMES):
             return
 
-        loaded: dict[int, Any] = {}
         selected = metadata.get("selected_models", {})
+        loaded: dict[int, Any] = {}
         for horizon in (15, 30):
-            if selected.get(str(horizon), "baseline") != "logistic_regression":
+            name = str(selected.get(str(horizon), "baseline"))
+            if name not in {"ridge", "random_forest", "baseline"}:
+                continue
+            self.selected_models[horizon] = name
+            if name == "baseline":
                 continue
             path = self.settings.model_dir / f"mini_flood_{horizon}m.joblib"
             if not path.exists():
+                self.selected_models[horizon] = "baseline"
                 continue
-            model = joblib.load(path)
+            try:
+                model = joblib.load(path)
+            except (OSError, ValueError, TypeError):
+                self.selected_models[horizon] = "baseline"
+                continue
             if list(getattr(model, "feature_names_in_", FEATURE_NAMES)) != list(FEATURE_NAMES):
+                self.selected_models[horizon] = "baseline"
                 continue
             loaded[horizon] = model
         self.models = loaded
-        self.version = str(metadata.get("model_version", "mini-flood-v1"))
+        self.version = str(metadata.get("model_version", self.version))
 
     @property
     def ready(self) -> bool:
         return set(self.models) == {15, 30}
 
-    def predict(self, features: dict[str, float]) -> tuple[dict[str, dict[str, Any]], str, bool]:
-        predictions: dict[str, dict[str, Any]] = {}
+    def predict(self, features: dict[str, float]) -> tuple[dict[int, float], str]:
         X = pd.DataFrame([[features[name] for name in FEATURE_NAMES]], columns=FEATURE_NAMES)
-        used_threshold_override = False
+        forecasts: dict[int, float] = {}
         for horizon in (15, 30):
-            baseline_result = self.baseline.predict_horizon(features, horizon)
-            if horizon not in self.models:
-                result = baseline_result
+            model = self.models.get(horizon)
+            if model is None:
+                value = self.baseline.predict_horizon(features, horizon)
             else:
-                model = self.models[horizon]
-                raw_probs = model.predict_proba(X)[0]
-                class_probs = {int(cls): float(prob) for cls, prob in zip(model.classes_, raw_probs)}
-                probabilities = [class_probs.get(i, 0.0) for i in (0, 1, 2)]
-                if max(probabilities) < 0.60:
-                    ai_level = 0
-                elif probabilities[2] >= 0.60:
-                    ai_level = 2
-                elif probabilities[1] + probabilities[2] >= 0.60:
-                    ai_level = 1
-                else:
-                    ai_level = 0
-                level = max(ai_level, int(baseline_result["risk_level"]))
-                used_threshold_override = used_threshold_override or level > ai_level
-                result = {
-                    "risk_level": level,
-                    "risk_label": RISK_LABELS[level],
-                    "probabilities": [round(value, 6) for value in probabilities],
-                }
-            predictions[f"{horizon}m"] = result
-        return predictions, self.version, used_threshold_override
-
-    def danger_override(self) -> dict[str, dict[str, Any]]:
-        item = {
-            "risk_level": 2,
-            "risk_label": RISK_LABELS[2],
-            "probabilities": _probabilities_for_level(2),
-        }
-        return {"15m": dict(item), "30m": dict(item)}
+                value = float(model.predict(X)[0])
+            forecasts[horizon] = round(max(0.0, value), 4)
+        return forecasts, self.version

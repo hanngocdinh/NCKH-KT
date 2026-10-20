@@ -57,20 +57,16 @@ def listen_sse(url: str, device_id: str | None = None) -> None:
                         status = data.get("quality_status", "valid")
 
                         pred_15 = "Chưa có"
-                        conf_15 = ""
-                        preds = data.get("predictions")
-                        if preds and "15m" in preds:
-                            pred_15 = preds["15m"].get("risk_label", "An toàn")
-                            probs = preds["15m"].get("probabilities", [])
-                            if probs:
-                                conf_15 = f"({max(probs) * 100:.1f}%)"
+                        forecast_15 = data.get("forecast_15m_cm")
+                        if forecast_15 is not None:
+                            pred_15 = f"{float(forecast_15):.1f} cm"
 
                         now_str = datetime.now().strftime("%H:%M:%S")
                         print(
                             f"[{now_str}] 📡 {dev} | Seq={seq:04} | "
                             f"🌊 Nước: {water:4.1f} cm | "
                             f"🌧️ Mưa: {rain:4.1f} mm/h | "
-                            f"🎯 Dự báo 15m: {pred_15} {conf_15} | "
+                            f"🎯 Dự báo 15m: {pred_15} | "
                             f"Trạng thái: {status}"
                         )
     except KeyboardInterrupt:
@@ -81,7 +77,7 @@ def listen_sse(url: str, device_id: str | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lắng nghe dữ liệu IoT thời gian thực")
-    parser.add_argument("--url", default="http://localhost:8000/api/v1/stream/sse", help="URL stream SSE")
+    parser.add_argument("--url", default="http://localhost:8000/api/v2/stream/sse", help="URL stream SSE")
     parser.add_argument("--device-id", default=None, help="Lọc theo mã thiết bị")
     args = parser.parse_args()
     listen_sse(args.url, args.device_id)
