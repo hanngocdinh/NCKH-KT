@@ -37,6 +37,40 @@ def send_telegram(message: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def check_telegram_connection(
+    token: str | None = None,
+    chat_id: str | None = None,
+) -> tuple[bool, str]:
+    resolved_token = (token or os.getenv("MINI_FLOOD_TELEGRAM_TOKEN", "")).strip()
+    resolved_chat_id = (chat_id or os.getenv("MINI_FLOOD_TELEGRAM_CHAT_ID", "")).strip()
+    if not resolved_token:
+        return False, "Thiếu MINI_FLOOD_TELEGRAM_TOKEN"
+    if not resolved_chat_id:
+        return False, "Thiếu MINI_FLOOD_TELEGRAM_CHAT_ID"
+
+    try:
+        me_resp = requests.get(f"https://api.telegram.org/bot{resolved_token}/getMe", timeout=10)
+        if me_resp.status_code != 200:
+            return False, f"Token không hợp lệ (HTTP {me_resp.status_code}): {me_resp.text[:200]}"
+        bot_info = me_resp.json().get("result", {})
+        bot_name = bot_info.get("username", "UnknownBot")
+
+        msg = (
+            f"[MÔ PHỎNG THỬ NGHIỆM]\n"
+            f"✅ Kết nối thành công tới trạm Mini Flood AI qua Bot @{bot_name}."
+        )
+        send_resp = requests.post(
+            f"https://api.telegram.org/bot{resolved_token}/sendMessage",
+            json={"chat_id": resolved_chat_id, "text": msg},
+            timeout=10,
+        )
+        if send_resp.status_code == 200:
+            return True, f"Kết nối và gửi tin nhắn thành công tới Bot @{bot_name} (Chat ID: {resolved_chat_id})"
+        return False, f"Lỗi gửi tin tới Chat ID (HTTP {send_resp.status_code}): {send_resp.text[:200]}"
+    except requests.RequestException as exc:
+        return False, f"Lỗi mạng khi kết nối Telegram: {exc}"
+
+
 def send_email(message: str) -> tuple[bool, str]:
     host = os.getenv("MINI_FLOOD_SMTP_HOST", "").strip()
     port = int(os.getenv("MINI_FLOOD_SMTP_PORT", "587"))
@@ -80,16 +114,18 @@ class AlertManager:
     ) -> str:
         label_15 = predictions["15m"]["risk_label"]
         label_30 = predictions["30m"]["risk_label"]
+        confidence_15 = max(predictions["15m"]["probabilities"]) * 100
+        confidence_30 = max(predictions["30m"]["probabilities"]) * 100
         heading = "CẢNH BÁO NGUY CƠ NGẬP" if event_type != "recovery" else "TRẠNG THÁI ĐÃ AN TOÀN"
         return "\n".join(
             [
                 "[MÔ PHỎNG THỬ NGHIỆM]",
                 "",
                 heading,
-                f"Dự báo 15 phút: {label_15}",
-                f"Dự báo 30 phút: {label_30}",
-                f"Mực nước hiện tại: {features['water_level_cm']:.1f} cm",
-                f"Tốc độ dâng 5 phút: {features['water_rise_5m_cm']:+.1f} cm",
+                f"Dự báo 15 phút: {label_15} ({confidence_15:.1f}%)",
+                f"Dự báo 30 phút: {label_30} ({confidence_30:.1f}%)",
+                f"Mực nước hiện tại: {features.get('water_level_cm', 0.0):.1f} cm",
+                f"Tốc độ dâng 2 phút: {features.get('water_rise_2m_cm', features.get('water_rise_5m_cm', 0.0)):+.1f} cm",
                 f"Nguyên nhân: {main_factor}",
                 f"Thời gian đo: {timestamp}",
             ]
@@ -176,3 +212,40 @@ class DeliveryWorker:
             self.db.update_delivery(int(item["id"]), ok, error)
             processed += 1
         return processed
+
+
+def main() -> int:
+    import argparse
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    parser = argparse.ArgumentParser(
+        description="Kiem tra ket noi va gui tin nhan thu nghiem toi Telegram Bot cho Mini Flood AI."
+    )
+    parser.add_argument(
+        "--token",
+        default=None,
+        help="Telegram Bot Token (neu khong cung cap se doc tu bien MINI_FLOOD_TELEGRAM_TOKEN)",
+    )
+    parser.add_argument(
+        "--chat-id",
+        default=None,
+        help="Telegram Chat ID (neu khong cung cap se doc tu bien MINI_FLOOD_TELEGRAM_CHAT_ID)",
+    )
+    args = parser.parse_args()
+    ok, message = check_telegram_connection(args.token, args.chat_id)
+    if ok:
+        print(f"[THÀNH CÔNG] {message}")
+        return 0
+    print(f"[THẤT BẠI] {message}")
+    return 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

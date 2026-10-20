@@ -10,9 +10,9 @@ Hệ thống sử dụng:
 - Cảm biến siêu âm đo mực nước.
 - ESP32 thu thập và truyền dữ liệu.
 - FastAPI và SQLite chạy trên laptop.
-- Random Forest làm mô hình dự báo chính.
-- Cây quyết định theo ngưỡng chạy trên ESP32 làm lớp an toàn dự phòng.
-- Đèn LED, còi, dashboard và thông báo cho người dùng.
+- Multinomial Logistic Regression làm mô hình phân loại chính.
+- Quy tắc ngưỡng trên backend làm lớp kiểm tra an toàn.
+- Dashboard, Telegram và email thông báo cho người dùng.
 
 > **Mục tiêu ưu tiên:** Hoàn thành một vòng hoạt động khép kín từ cảm biến đến cảnh báo, có thể chạy ổn định và trình diễn trực tiếp.
 
@@ -29,7 +29,7 @@ Hệ thống sử dụng:
 - Truyền dữ liệu bằng HTTP qua Wi-Fi.
 - Backend chạy trên laptop và lưu dữ liệu bằng SQLite.
 - Ba mức cảnh báo: An toàn, Có nguy cơ và Nguy hiểm cao.
-- Cảnh báo tại chỗ bằng đèn và còi.
+- Cảnh báo cho người dùng qua dashboard, Telegram và email.
 
 ### Ngoài phạm vi
 
@@ -57,9 +57,9 @@ Kết quả của V1 không đại diện cho dự báo ngập toàn Hội An.
 2. Tính tốc độ dâng nước trong 5 phút.
 3. Tính lượng mưa tích lũy trong 15 phút.
 4. Dự báo ba mức rủi ro cho 15 phút và 30 phút tiếp theo.
-5. Điều khiển đèn và còi theo mức cảnh báo cuối cùng.
+5. Hiển thị và gửi thông báo theo mức cảnh báo cuối cùng.
 6. Lưu dữ liệu phục vụ kiểm tra và tái huấn luyện.
-7. Trình diễn được cả chế độ trực tuyến và chế độ mất Wi-Fi.
+7. Kiểm tra khả năng lưu đệm dữ liệu khi ESP32 mất Wi-Fi.
 
 ---
 
@@ -70,11 +70,11 @@ Hai cảm biến tạo ra bốn tham số chính:
 | Tham số | Nguồn | Ý nghĩa | Đơn vị |
 |---|---|---|---|
 | `water_level_cm` | Cảm biến siêu âm | Mực nước hiện tại trong hố ga | cm |
-| `water_rise_5m_cm` | Tính từ lịch sử mực nước | Mức tăng của mực nước trong 5 phút | cm/5 phút |
+| `water_rise_2m_cm` | Tính từ lịch sử mực nước | Mức tăng của mực nước trong 2 phút | cm/2 phút |
 | `rain_rate_mmh` | Cảm biến mưa | Cường độ mưa tức thời | mm/giờ |
-| `rain_sum_15m` | Tính từ lịch sử lượng mưa | Tổng lượng mưa trong 15 phút gần nhất | mm |
+| `rain_sum_5m` | Tính từ lịch sử lượng mưa | Tổng lượng mưa trong 5 phút gần nhất | mm |
 
-ESP32 gửi giá trị đo thô. Backend sử dụng lịch sử các bản ghi để tính `water_rise_5m_cm` và `rain_sum_15m` trước khi gọi model.
+ESP32 gửi giá trị đo thô. Backend sử dụng lịch sử các bản ghi để tính `water_rise_2m_cm` và `rain_sum_5m` trước khi gọi model.
 
 ---
 
@@ -86,15 +86,12 @@ flowchart TD
     B -->|HTTP POST mỗi phút| C[FastAPI]
     C --> D[Kiểm tra và lưu SQLite]
     D --> E[Feature Engine]
-    E --> F[Random Forest 15 phút]
-    E --> G[Random Forest 30 phút]
+    E --> F[Logistic Regression 15 phút]
+    E --> G[Logistic Regression 30 phút]
     F --> H[Chính sách cảnh báo]
     G --> H
-    H --> I[Dashboard và thông báo]
-    H --> J[Phản hồi về ESP32]
-    J --> K[Đèn LED và còi]
-    B -->|Mất mạng| L[Cây quyết định theo ngưỡng]
-    L --> K
+    H --> I[Dashboard]
+    H --> J[Telegram và email]
 ```
 
 ### Luồng xử lý
@@ -104,9 +101,23 @@ flowchart TD
 3. Backend kiểm tra dữ liệu và chống bản ghi trùng.
 4. Dữ liệu hợp lệ được lưu vào SQLite.
 5. Feature Engine lấy lịch sử để tạo bốn đầu vào cho AI.
-6. Hai model Random Forest dự báo cho 15 phút và 30 phút.
+6. Hai model Logistic Regression dự báo cho 15 phút và 30 phút.
 7. Backend kết hợp kết quả AI với ngưỡng an toàn.
-8. Mức cảnh báo cuối cùng được gửi đến dashboard, hệ thống thông báo và ESP32.
+8. Mức cảnh báo cuối cùng được hiển thị trên dashboard và gửi qua Telegram hoặc email.
+
+ESP32 chỉ có nhiệm vụ đo và gửi dữ liệu. Backend không gửi mức cảnh báo hoặc lệnh điều khiển ngược về ESP32.
+
+### Cấu trúc source triển khai
+
+```text
+mini_flood/                 Logic backend, feature, model, database và thông báo
+mini_flood_api.py           API nhận telemetry
+app_mini_flood_dashboard.py Dashboard cho người dùng
+train_mini_flood_models.py  Huấn luyện Logistic Regression 15/30 phút
+firmware/esp32_http/        Firmware ESP32 chỉ gửi dữ liệu
+tests/                      Kiểm thử pipeline V1
+models/                     Model V1 sinh từ thí nghiệm theo phút
+```
 
 ---
 
@@ -144,7 +155,7 @@ POST /api/v1/telemetry
 
 ---
 
-## 7. Mô hình Random Forest
+## 7. Mô hình Logistic Regression
 
 Hệ thống sử dụng hai model độc lập:
 
@@ -166,6 +177,31 @@ probabilities = model.predict_proba(feature_vector)
 risk_level = model.predict(feature_vector)
 ```
 
+Đây là **Multinomial Logistic Regression**, tức mô hình phân loại tuyến tính cho ba lớp. Không sử dụng Linear Regression thông thường vì đầu ra của bài toán là cấp cảnh báo rời rạc và cần xác suất cho từng lớp.
+
+### Lý do chọn mô hình tuyến tính cho V1
+
+- Chỉ có bốn đặc trưng đầu vào.
+- Dataset thí nghiệm ban đầu có quy mô nhỏ.
+- Regularization giúp mô hình ít bị quá khớp hơn một mô hình cây phức tạp.
+- Hệ số của mô hình dễ giải thích và kiểm tra.
+- `predict_proba` cung cấp confidence trực tiếp cho từng cấp cảnh báo.
+- Thời gian huấn luyện và suy luận ngắn.
+
+Mô hình tuyến tính không mặc định chính xác hơn Random Forest. Nó được chọn vì đơn giản và có khả năng ổn định hơn trong giai đoạn ít dữ liệu. Nhóm vẫn phải đánh giá bằng tập kiểm thử độc lập.
+
+### Pipeline huấn luyện đề xuất
+
+```text
+4 đặc trưng
+    → StandardScaler
+    → Multinomial Logistic Regression
+    → Xác suất P0, P1, P2
+    → Chính sách cảnh báo
+```
+
+Cấu hình ban đầu nên sử dụng regularization L2 và `class_weight="balanced"` để giảm ảnh hưởng của việc lớp An toàn có nhiều mẫu hơn. Giá trị confidence phải được kiểm tra thêm bằng Log Loss, Brier Score hoặc biểu đồ calibration; không mặc định xác suất model trả về đã được hiệu chuẩn tốt.
+
 ---
 
 ## 8. Quy đổi confidence thành cảnh báo
@@ -180,24 +216,26 @@ Gọi xác suất ba lớp là `P0`, `P1` và `P2`.
 6. Mức cảnh báo cuối cùng bằng mức cao hơn giữa AI và quy tắc an toàn.
 
 ```text
-final_level = max(ai_level, safety_rule_level)
+final_level = max(ai_level, backend_threshold_level)
 ```
 
 AI không được hạ mức cảnh báo khi dữ liệu cảm biến hiện tại đã vượt ngưỡng nguy hiểm.
 
 ---
 
-## 9. Quy tắc an toàn trên ESP32
+## 9. Quy tắc ngưỡng trên backend
 
 Các ngưỡng dưới đây dành cho mô hình hố ga sâu 40 cm.
 
-| Mức | Điều kiện kích hoạt | Phản hồi |
+| Mức | Điều kiện kích hoạt | Thông báo cho người dùng |
 |---|---|---|
-| **0 — An toàn** | Nước `< 15 cm`, dâng `< 2 cm/5 phút` và mưa `< 25 mm/giờ` | Đèn xanh, còi tắt, hoạt động bình thường |
-| **1 — Có nguy cơ** | Nước từ `15 đến < 25 cm` **hoặc** dâng `>= 3 cm/5 phút` **hoặc** mưa `>= 25 mm/giờ` | Đèn vàng, còi tắt, khơi thông cống và kê cao thiết bị |
-| **2 — Nguy hiểm cao** | Nước `>= 25 cm` **hoặc** dâng `>= 6 cm/5 phút` **hoặc** nước `>= 20 cm` kèm mưa `> 40 mm/giờ` | Đèn đỏ chớp, còi hú, đưa học sinh lên cao và xử lý điện theo quy trình nhà trường |
+| **0 — An toàn** | Nước `< 15 cm`, dâng `< 2 cm/5 phút` và mưa `< 25 mm/giờ` | Dashboard hiển thị An toàn, không gửi cảnh báo |
+| **1 — Có nguy cơ** | Nước từ `15 đến < 25 cm` **hoặc** dâng `>= 3 cm/5 phút` **hoặc** mưa `>= 25 mm/giờ` | Dashboard hiển thị Có nguy cơ; gửi thông báo phòng ngừa |
+| **2 — Nguy hiểm cao** | Nước `>= 25 cm` **hoặc** dâng `>= 6 cm/5 phút` **hoặc** nước `>= 20 cm` kèm mưa `> 40 mm/giờ` | Dashboard hiển thị Nguy hiểm cao; gửi thông báo khẩn cấp |
 
-Cây quyết định theo ngưỡng chạy trực tiếp trên ESP32. Khi mất mạng hoặc backend dừng, thiết bị vẫn có thể điều khiển đèn và còi.
+Quy tắc ngưỡng chạy trên backend và đóng vai trò baseline kiêm lớp bảo vệ cho kết quả AI. Không có cơ chế điều khiển đèn, còi hoặc gửi lệnh ngược về ESP32.
+
+Khi ESP32 mất Wi-Fi, thiết bị chỉ lưu đệm dữ liệu để gửi lại sau. Hệ thống không thể phát cảnh báo thời gian thực nếu backend không nhận được dữ liệu mới.
 
 ---
 
@@ -244,8 +282,9 @@ Các chỉ số bắt buộc:
 - Confusion matrix.
 - Số cảnh báo giả.
 - Số phút cảnh báo trước khi nước vượt ngưỡng.
+- Log Loss hoặc Brier Score để đánh giá chất lượng confidence.
 
-Random Forest chỉ được dùng làm model chính khi Recall lớp Nguy hiểm cao và Macro-F1 tốt hơn baseline theo ngưỡng trên tập kiểm thử.
+Logistic Regression chỉ được dùng làm model chính khi Recall lớp Nguy hiểm cao và Macro-F1 tốt hơn baseline theo ngưỡng trên tập kiểm thử.
 
 Nếu chưa đạt, hệ thống tiếp tục sử dụng quy tắc an toàn và thu thập thêm dữ liệu.
 
@@ -255,21 +294,21 @@ Nếu chưa đạt, hệ thống tiếp tục sử dụng quy tắc an toàn và
 
 | Giai đoạn | Công việc | Sản phẩm bàn giao | Điều kiện hoàn thành |
 |---|---|---|---|
-| 1. Phần cứng và hiệu chuẩn | Lắp ESP32, cảm biến, đèn và còi; đo tại năm mức nước biết trước | Bộ thiết bị đọc dữ liệu ổn định | Sai số được ghi nhận, không có giá trị nhảy bất thường |
+| 1. Phần cứng và hiệu chuẩn | Lắp ESP32 và hai cảm biến; đo tại năm mức nước biết trước | Bộ thiết bị đọc dữ liệu ổn định | Sai số được ghi nhận, không có giá trị nhảy bất thường |
 | 2. Thu nhận dữ liệu | Gửi HTTP, kiểm tra khóa, chống trùng và lưu đệm khi mất Wi-Fi | FastAPI và SQLite | Dữ liệu hợp lệ được lưu đúng và không bị trùng |
-| 3. Cảnh báo an toàn | Cài cây quyết định trên ESP32 | Demo ngoại tuyến | Rút Wi-Fi nhưng đèn và còi vẫn đổi mức đúng |
+| 3. Feature Engine và ngưỡng | Tính đặc trưng lịch sử và cài quy tắc ngưỡng trên backend | Pipeline phân tích cơ bản | Kết quả tính tay và backend khớp nhau |
 | 4. Thí nghiệm | Chạy ba kịch bản, mỗi kịch bản ít nhất ba lần | Dataset theo phút | Có đủ `run_id`, timestamp và quality flags |
-| 5. Huấn luyện AI | Tạo đặc trưng, tạo nhãn, huấn luyện và đánh giá | Hai model Random Forest | Có báo cáo so sánh với baseline |
+| 5. Huấn luyện AI | Tạo đặc trưng, tạo nhãn, huấn luyện và đánh giá | Hai model Logistic Regression | Có báo cáo so sánh với baseline |
 | 6. Tích hợp | Kết hợp AI, ngưỡng an toàn, dashboard và thông báo | Prototype V1 | Hoàn thành kiểm thử và demo khép kín |
 
 ### Tiến độ đề xuất
 
 | Tuần | Mục tiêu |
 |---|---|
-| Tuần 1 | Lắp phần cứng, hiệu chuẩn cảm biến và hoàn thiện ngưỡng ESP32 |
+| Tuần 1 | Lắp phần cứng và hiệu chuẩn hai cảm biến |
 | Tuần 2 | Hoàn thiện HTTP, SQLite, bộ đệm và dashboard cơ bản |
 | Tuần 3 | Chạy thí nghiệm, kiểm tra chất lượng và chốt dataset |
-| Tuần 4 | Huấn luyện Random Forest, đánh giá và chọn cấu hình |
+| Tuần 4 | Huấn luyện Logistic Regression, đánh giá và chọn cấu hình |
 | Tuần 5 | Tích hợp toàn hệ thống, kiểm thử lỗi và luyện trình diễn |
 
 ---
@@ -278,9 +317,9 @@ Nếu chưa đạt, hệ thống tiếp tục sử dụng quy tắc an toàn và
 
 | Mức ưu tiên | Hạng mục |
 |---|---|
-| P0 | Cảm biến → ESP32 → đèn và còi |
-| P0 | ESP32 → HTTP → SQLite |
-| P1 | Random Forest 15 phút và 30 phút |
+| P0 | Cảm biến → ESP32 → HTTP → SQLite |
+| P0 | Feature Engine và quy tắc ngưỡng trên backend |
+| P1 | Logistic Regression 15 phút và 30 phút |
 | P1 | Dashboard |
 | P2 | Telegram và email |
 | P3 | Dữ liệu thủy văn và dự báo diện rộng |
@@ -308,8 +347,8 @@ Telegram và email chỉ được tích hợp sau khi logic cảnh báo cốt l�
 
 ### Feature Engine
 
-- Kiểm tra `rain_sum_15m` bằng dữ liệu tính tay.
-- Kiểm tra `water_rise_5m_cm` bằng dữ liệu tính tay.
+- Kiểm tra `rain_sum_5m` bằng dữ liệu tính tay.
+- Kiểm tra `water_rise_2m_cm` bằng dữ liệu tính tay.
 - Không sử dụng dữ liệu tương lai.
 - Dữ liệu thiếu trả về `unknown`, không thay bằng `0`.
 - Chu kỳ gửi không đều vẫn được tính đúng theo thời gian.
@@ -327,7 +366,7 @@ Telegram và email chỉ được tích hợp sau khi logic cảnh báo cốt l�
 - Kiểm tra chuyển từ An toàn sang Có nguy cơ và Nguy hiểm cao.
 - Kiểm tra trường hợp AI confidence thấp.
 - Kiểm tra khi mực nước vượt ngưỡng nguy hiểm.
-- Kiểm tra khi mất kết nối backend.
+- Kiểm tra backend xử lý khi dữ liệu mới bị gián đoạn.
 - Telegram lỗi không được ngăn email gửi.
 
 ---
@@ -337,26 +376,25 @@ Telegram và email chỉ được tích hợp sau khi logic cảnh báo cốt l�
 - [ ] Hai cảm biến tạo dữ liệu ổn định và có kết quả hiệu chuẩn.
 - [ ] ESP32 gửi dữ liệu theo phút và chống bản ghi trùng.
 - [ ] ESP32 lưu đệm dữ liệu khi mất Wi-Fi.
-- [ ] Đèn và còi hoạt động đúng khi backend bị ngắt.
 - [ ] Backend tạo đúng bốn đầu vào cho AI.
-- [ ] Hai model trả xác suất và mức dự báo cho 15 phút và 30 phút.
+- [ ] Hai model Logistic Regression trả xác suất và mức dự báo cho 15 phút và 30 phút.
 - [ ] Báo cáo có confusion matrix, Recall lớp nguy hiểm và Macro-F1.
 - [ ] Dashboard hiển thị `[MÔ PHỎNG THỬ NGHIỆM]`.
 - [ ] Hoàn thành một bài trình diễn khép kín.
-- [ ] Hoàn thành một bài kiểm thử mất mạng.
+- [ ] Hoàn thành kiểm thử mất mạng, lưu đệm và gửi lại dữ liệu.
 
 ---
 
 ## 17. Kịch bản trình diễn
 
-1. Khởi động hệ thống khi mực nước thấp. Đèn xanh bật và còi tắt.
+1. Khởi động hệ thống khi mực nước thấp. Dashboard hiển thị mức An toàn.
 2. Tăng lượng nước đầu vào để mô phỏng mưa lớn.
-3. Dashboard hiển thị mưa, mực nước và tốc độ dâng.
-4. Khi xuất hiện Mức 1, đèn chuyển vàng.
-5. Tiếp tục tăng nước đến Mức 2. Đèn đỏ chớp và còi hú.
-6. Ngắt Wi-Fi để chứng minh ESP32 vẫn cảnh báo tại chỗ.
+3. Dashboard hiển thị mưa, mực nước, tốc độ dâng và confidence.
+4. Khi xuất hiện Mức 1, hệ thống gửi thông báo Có nguy cơ.
+5. Tiếp tục tăng nước đến Mức 2 và kiểm tra thông báo Nguy hiểm cao.
+6. Ngắt Wi-Fi để kiểm tra ESP32 lưu đệm dữ liệu.
 7. Kết nối lại Wi-Fi và kiểm tra dữ liệu đệm được gửi lên.
-8. AI tiếp tục dự báo sau khi khôi phục kết nối.
+8. Backend tiếp tục dự báo sau khi khôi phục kết nối.
 
 ---
 
@@ -367,7 +405,8 @@ Telegram và email chỉ được tích hợp sau khi logic cảnh báo cốt l�
 | Ít mẫu nguy hiểm | Model thiên về lớp An toàn | Tăng số lần chạy kịch bản nguy hiểm và đánh giá theo từng lớp |
 | Cảm biến mưa chưa được hiệu chuẩn | Đầu vào sai đơn vị | Hiệu chuẩn bằng lượng nước biết trước và lưu hệ số hiệu chuẩn |
 | Siêu âm bị nhiễu | Mực nước dao động | Lọc trung vị nhiều lần đo và gắn quality flag |
-| Mất Wi-Fi hoặc laptop dừng | Không có dự báo AI | ESP32 tiếp tục chạy cây quyết định và lưu đệm dữ liệu |
+| Mất Wi-Fi | Backend không nhận được dữ liệu mới | ESP32 lưu đệm và gửi lại sau; dashboard hiển thị trạng thái mất dữ liệu |
+| Backend hoặc laptop dừng | Không thể dự báo hay gửi thông báo | Khởi động lại dịch vụ, lưu cooldown trong SQLite và hiển thị trạng thái hệ thống |
 | AI quá tự tin trên dữ liệu mới | Cảnh báo sai | Giữ ngưỡng an toàn làm lớp bảo vệ và tái huấn luyện |
 
 ---
@@ -375,12 +414,12 @@ Telegram và email chỉ được tích hợp sau khi logic cảnh báo cốt l�
 ## 19. Kết quả đầu ra
 
 - Mô hình vật lý hố ga hoặc rãnh thoát nước.
-- Firmware ESP32 đọc cảm biến, gửi HTTP và điều khiển cảnh báo.
-- Cây quyết định dự phòng chạy trên ESP32.
+- Firmware ESP32 đọc cảm biến, gửi HTTP và lưu đệm khi mất mạng.
+- Quy tắc ngưỡng an toàn chạy trên backend.
 - Backend FastAPI và cơ sở dữ liệu SQLite.
 - Dashboard theo dõi dữ liệu và dự báo.
 - Dataset thí nghiệm đã hiệu chuẩn.
-- Model Random Forest 15 phút và 30 phút.
+- Model Multinomial Logistic Regression 15 phút và 30 phút.
 - Báo cáo đánh giá model.
 - Hướng dẫn lắp đặt, vận hành và kiểm thử.
 

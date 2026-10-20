@@ -17,13 +17,9 @@ def make_dummy_prediction(level: int):
 
 DUMMY_FEATURES = {
     "rain_rate_mmh": 50.0,
-    "rain_sum_5m": 4.0,
-    "rain_sum_15m": 12.0,
-    "rain_sum_30m": 18.0,
+    "rain_sum_5m": 12.0,
     "water_level_cm": 28.0,
-    "water_rise_5m_cm": 5.0,
-    "water_rise_15m_cm": 10.0,
-    "missing_ratio_15m": 0.0,
+    "water_rise_2m_cm": 5.0,
 }
 
 

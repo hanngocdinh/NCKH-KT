@@ -10,15 +10,15 @@ def synthetic_experiments():
     rows = []
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for experiment in range(5):
-        for minute in range(70):
-            if minute < 20:
-                level = 6 + minute * 0.1
+        for minute in range(100):
+            if minute < 50:
+                level = 6 + minute * 0.05
                 rain = 2
-            elif minute < 45:
-                level = 8 + (minute - 20) * 0.5
+            elif minute < 70:
+                level = 8.5 + (minute - 50) * 0.5
                 rain = 35
             else:
-                level = 20.5 + (minute - 45) * 0.35
+                level = 18.5 + (minute - 70) * 0.6
                 rain = 50
             rows.append(
                 {

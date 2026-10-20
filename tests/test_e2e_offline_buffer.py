@@ -93,7 +93,7 @@ def test_stale_timestamp_flagged(tmp_path):
     data = res.json()
     assert data["accepted"] is True
     assert data["quality_status"] == "unknown"
-    assert data["predictions"] is None
+    assert "predictions" not in data
 
     # Kiểm tra bản ghi lưu trong database có flag stale_timestamp
     with db.connect() as conn:

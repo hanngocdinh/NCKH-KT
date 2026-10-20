@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from .broadcaster import broadcaster
 from .config import MiniFloodSettings
 from .db import MiniFloodDatabase
 from .features import build_features, identify_main_factor
-from .models import MiniFloodModelRegistry, RISK_LABELS
+from .models import MiniFloodModelRegistry
 from .notifications import AlertManager, DeliveryWorker
 from .schemas import TelemetryPayload
 
@@ -18,6 +19,7 @@ class MiniFloodService:
         self.registry = MiniFloodModelRegistry(settings)
         self.alerts = AlertManager(self.db, settings)
         self.delivery_worker = DeliveryWorker(self.db)
+        self.broadcaster = broadcaster
 
     @staticmethod
     def _timestamp_quality(timestamp: datetime) -> list[str]:
@@ -46,37 +48,49 @@ class MiniFloodService:
             item, quality_status, str(experiment.get("experiment_id", "unassigned"))
         )
         if duplicate:
-            existing = self.db.get_prediction(telemetry_id)
-            if existing:
-                return self._response_from_prediction(existing, quality_status, duplicate=True)
-            return self._base_response("warming_up", duplicate=True)
+            return self._ack(quality_status, duplicate=True)
 
         rows = self.db.get_recent_telemetry(payload.device_id, timestamp, minutes=65)
         features, feature_status = build_features(rows, self.settings.expected_interval_seconds)
+
+        event: dict[str, Any] = {
+            "type": "telemetry",
+            "telemetry_id": telemetry_id,
+            "device_id": payload.device_id,
+            "sequence_no": payload.sequence_no,
+            "timestamp": payload.timestamp.isoformat(),
+            "water_level_cm": payload.water_level_cm,
+            "rain_rate_mmh": payload.rain_rate_mmh,
+            "rain_interval_mm": payload.rain_interval_mm,
+            "quality_status": quality_status,
+            "features": features,
+            "predictions": None,
+            "main_factor": None,
+            "rule_override": False,
+        }
 
         if payload.water_level_cm >= self.settings.danger_level_cm:
             features = features or {
                 "rain_rate_mmh": payload.rain_rate_mmh,
                 "rain_sum_5m": payload.rain_interval_mm,
-                "rain_sum_15m": payload.rain_interval_mm,
-                "rain_sum_30m": payload.rain_interval_mm,
                 "water_level_cm": payload.water_level_cm,
-                "water_rise_5m_cm": 0.0,
-                "water_rise_15m_cm": 0.0,
-                "missing_ratio_15m": 1.0,
+                "water_rise_2m_cm": 0.0,
             }
             predictions = self.registry.danger_override()
             version = f"{self.registry.version}+safety-rule"
             main_factor = "Mực nước hiện tại đã vượt ngưỡng nguy hiểm"
             rule_override = True
         elif quality_status != "valid":
-            return self._base_response("unknown", duplicate=False)
+            event["quality_status"] = "unknown"
+            self.broadcaster.publish_sync(event)
+            return self._ack("unknown", duplicate=False)
         elif feature_status != "valid" or features is None:
-            return self._base_response("warming_up", duplicate=False)
+            event["quality_status"] = "warming_up"
+            self.broadcaster.publish_sync(event)
+            return self._ack("warming_up", duplicate=False)
         else:
-            predictions, version, _ = self.registry.predict(features)
+            predictions, version, rule_override = self.registry.predict(features)
             main_factor = identify_main_factor(features)
-            rule_override = False
 
         self.db.save_prediction(
             telemetry_id, version, features, predictions, main_factor, rule_override
@@ -89,42 +103,19 @@ class MiniFloodService:
             features,
             main_factor,
         )
-        return {
-            "accepted": True,
-            "duplicate": False,
-            "quality_status": "valid",
-            "server_timestamp": datetime.now(timezone.utc),
-            "predictions": predictions,
-            "model_version": version,
-            "main_factor": main_factor,
-            "rule_override": rule_override,
-        }
+        event["quality_status"] = "valid"
+        event["features"] = features
+        event["predictions"] = predictions
+        event["main_factor"] = main_factor
+        event["rule_override"] = rule_override
+        self.broadcaster.publish_sync(event)
+        return self._ack("valid", duplicate=False)
 
     @staticmethod
-    def _response_from_prediction(existing: dict[str, Any], quality_status: str, duplicate: bool) -> dict[str, Any]:
-        predictions = existing["predictions"]
-        for value in predictions.values():
-            value["risk_label"] = RISK_LABELS[int(value["risk_level"])]
-        return {
-            "accepted": True,
-            "duplicate": duplicate,
-            "quality_status": quality_status,
-            "server_timestamp": datetime.now(timezone.utc),
-            "predictions": predictions,
-            "model_version": existing["model_version"],
-            "main_factor": existing["main_factor"],
-            "rule_override": existing["rule_override"],
-        }
-
-    @staticmethod
-    def _base_response(status: str, duplicate: bool) -> dict[str, Any]:
+    def _ack(status: str, duplicate: bool) -> dict[str, Any]:
         return {
             "accepted": True,
             "duplicate": duplicate,
             "quality_status": status,
             "server_timestamp": datetime.now(timezone.utc),
-            "predictions": None,
-            "model_version": None,
-            "main_factor": None,
-            "rule_override": False,
         }

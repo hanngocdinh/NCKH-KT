@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "author": "Mini Flood Warning Team",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultrasonic_water",
+      "top": -140,
+      "left": 180,
+      "attrs": { "distance": "28" }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultrasonic_rain",
+      "top": -140,
+      "left": -200,
+      "attrs": { "distance": "20" }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "rain_pot",
+      "top": 140,
+      "left": -180,
+      "attrs": { "label": "Simulate Rain POT (mm/h)" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:rx", "", [] ],
+    [ "esp:RX", "$serialMonitor:tx", "", [] ],
+
+    [ "esp:GND.1", "ultrasonic_water:GND", "black", [ "v0" ] ],
+    [ "esp:5V", "ultrasonic_water:VCC", "red", [ "v0" ] ],
+    [ "esp:18", "ultrasonic_water:TRIG", "blue", [ "v0" ] ],
+    [ "esp:19", "ultrasonic_water:ECHO", "cyan", [ "v0" ] ],
+
+    [ "esp:GND.1", "ultrasonic_rain:GND", "black", [ "v0" ] ],
+    [ "esp:5V", "ultrasonic_rain:VCC", "red", [ "v0" ] ],
+    [ "esp:5", "ultrasonic_rain:TRIG", "green", [ "v0" ] ],
+    [ "esp:17", "ultrasonic_rain:ECHO", "magenta", [ "v0" ] ],
+
+    [ "esp:GND.2", "rain_pot:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "rain_pot:VCC", "red", [ "v0" ] ],
+    [ "esp:34", "rain_pot:SIG", "purple", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

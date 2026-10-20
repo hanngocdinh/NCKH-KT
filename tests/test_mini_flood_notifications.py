@@ -11,13 +11,9 @@ def prediction(level: int):
 
 FEATURES = {
     "rain_rate_mmh": 40,
-    "rain_sum_5m": 3,
-    "rain_sum_15m": 9,
-    "rain_sum_30m": 12,
+    "rain_sum_5m": 9,
     "water_level_cm": 20,
-    "water_rise_5m_cm": 3,
-    "water_rise_15m_cm": 6,
-    "missing_ratio_15m": 0,
+    "water_rise_2m_cm": 3,
 }
 
 
@@ -58,3 +54,67 @@ def test_recovery_requires_two_safe_cycles_and_survives_new_manager(tmp_path):
     assert second.evaluate(None, "device", "t2", prediction(0), FEATURES, "test") is None
     recovery_id = second.evaluate(None, "device", "t3", prediction(0), FEATURES, "test")
     assert recovery_id is not None
+
+
+def test_check_telegram_connection_missing_credentials(monkeypatch):
+    from mini_flood.notifications import check_telegram_connection
+
+    monkeypatch.delenv("MINI_FLOOD_TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("MINI_FLOOD_TELEGRAM_CHAT_ID", raising=False)
+
+    ok, msg = check_telegram_connection(None, None)
+    assert not ok
+    assert "MINI_FLOOD_TELEGRAM_TOKEN" in msg
+
+    ok, msg = check_telegram_connection("valid_token", None)
+    assert not ok
+    assert "MINI_FLOOD_TELEGRAM_CHAT_ID" in msg
+
+
+def test_check_telegram_connection_success(monkeypatch):
+    from mini_flood.notifications import check_telegram_connection
+
+    class MockResponse:
+        def __init__(self, status_code, json_data, text=""):
+            self.status_code = status_code
+            self._json_data = json_data
+            self.text = text
+
+        def json(self):
+            return self._json_data
+
+    import requests
+
+    def mock_get(url, timeout=10):
+        return MockResponse(200, {"result": {"username": "TestFloodBot"}})
+
+    def mock_post(url, json=None, timeout=10):
+        return MockResponse(200, {"ok": True})
+
+    monkeypatch.setattr(requests, "get", mock_get)
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    ok, msg = check_telegram_connection("fake_token", "123456")
+    assert ok
+    assert "TestFloodBot" in msg
+    assert "123456" in msg
+
+
+def test_check_telegram_connection_invalid_token(monkeypatch):
+    from mini_flood.notifications import check_telegram_connection
+
+    class MockResponse:
+        def __init__(self, status_code, text):
+            self.status_code = status_code
+            self.text = text
+
+    import requests
+
+    def mock_get(url, timeout=10):
+        return MockResponse(401, "Unauthorized")
+
+    monkeypatch.setattr(requests, "get", mock_get)
+
+    ok, msg = check_telegram_connection("bad_token", "123456")
+    assert not ok
+    assert "Token không hợp lệ" in msg

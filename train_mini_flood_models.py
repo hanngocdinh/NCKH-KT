@@ -18,9 +18,8 @@ import pandas as pd
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import confusion_matrix, f1_score, log_loss, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -112,18 +111,36 @@ def chronological_experiment_split(data: pd.DataFrame) -> tuple[pd.DataFrame, pd
     return data[data["experiment_id"].isin(train_ids)], data[data["experiment_id"].isin(test_ids)]
 
 
-def evaluate(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
-    return {
+def evaluate(
+    y_true: pd.Series,
+    y_pred: np.ndarray,
+    probabilities: np.ndarray | None = None,
+) -> dict[str, float]:
+    metrics = {
         "macro_f1": round(float(f1_score(y_true, y_pred, average="macro", zero_division=0)), 6),
         "danger_recall": round(float(recall_score(y_true, y_pred, labels=[2], average="macro", zero_division=0)), 6),
         "danger_precision": round(float(precision_score(y_true, y_pred, labels=[2], average="macro", zero_division=0)), 6),
     }
+    if probabilities is not None:
+        one_hot = np.eye(3)[np.asarray(y_true, dtype=int)]
+        metrics["log_loss"] = round(float(log_loss(y_true, probabilities, labels=[0, 1, 2])), 6)
+        metrics["brier_score"] = round(float(np.mean(np.sum((probabilities - one_hot) ** 2, axis=1))), 6)
+    else:
+        metrics["log_loss"] = float("nan")
+        metrics["brier_score"] = float("nan")
+    return metrics
 
 
-def baseline_predictions(features: pd.DataFrame, horizon: int, settings: MiniFloodSettings) -> np.ndarray:
+def baseline_outputs(
+    features: pd.DataFrame,
+    horizon: int,
+    settings: MiniFloodSettings,
+) -> tuple[np.ndarray, np.ndarray]:
     baseline = BaselinePredictor(settings)
-    return np.array(
-        [baseline.predict_horizon(row.to_dict(), horizon)["risk_level"] for _, row in features.iterrows()]
+    outputs = [baseline.predict_horizon(row.to_dict(), horizon) for _, row in features.iterrows()]
+    return (
+        np.asarray([item["risk_level"] for item in outputs], dtype=int),
+        np.asarray([item["probabilities"] for item in outputs], dtype=float),
     )
 
 
@@ -145,40 +162,45 @@ def train(input_csv: Path, output_dir: Path, settings: MiniFloodSettings) -> dic
         X_test = test_df[list(FEATURE_NAMES)]
         y_test = test_df[target].astype(int)
 
-        candidates = {
-            "logistic_regression": Pipeline(
-                [
-                    ("scaler", StandardScaler()),
-                    ("classifier", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)),
-                ]
-            ),
-            "random_forest": RandomForestClassifier(
-                n_estimators=200,
-                max_depth=8,
-                min_samples_leaf=2,
-                class_weight="balanced",
-                random_state=42,
-            ),
-        }
-        baseline_pred = baseline_predictions(X_test, horizon, settings)
-        baseline_metrics = evaluate(y_test, baseline_pred)
+        missing_classes = {0, 1, 2} - set(y_train.unique())
+        if missing_classes:
+            raise ValueError(
+                f"Tập train {horizon} phút thiếu lớp {sorted(missing_classes)}; "
+                "cần bổ sung lần chạy thí nghiệm trước khi huấn luyện"
+            )
+
+        model = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                (
+                    "classifier",
+                    LogisticRegression(
+                        max_iter=2000,
+                        class_weight="balanced",
+                        random_state=42,
+                    ),
+                ),
+            ]
+        )
+        baseline_pred, baseline_probs = baseline_outputs(X_test, horizon, settings)
+        baseline_metrics = evaluate(y_test, baseline_pred, baseline_probs)
         all_metrics.append({"horizon": horizon, "model": "baseline", **baseline_metrics})
 
-        best_name = "baseline"
-        best_model = None
-        best_metrics = baseline_metrics
-        best_pred = baseline_pred
-        for name, model in candidates.items():
-            model.fit(X_train, y_train)
-            pred = model.predict(X_test)
-            metrics = evaluate(y_test, pred)
-            all_metrics.append({"horizon": horizon, "model": name, **metrics})
-            eligible = (
-                metrics["macro_f1"] > baseline_metrics["macro_f1"]
-                and metrics["danger_recall"] >= baseline_metrics["danger_recall"]
-            )
-            if eligible and metrics["macro_f1"] > best_metrics["macro_f1"]:
-                best_name, best_model, best_metrics, best_pred = name, model, metrics, pred
+        model.fit(X_train, y_train)
+        pred = model.predict(X_test)
+        raw_probs = model.predict_proba(X_test)
+        probabilities = np.zeros((len(X_test), 3), dtype=float)
+        for source_index, label in enumerate(model.classes_):
+            probabilities[:, int(label)] = raw_probs[:, source_index]
+        metrics = evaluate(y_test, pred, probabilities)
+        all_metrics.append({"horizon": horizon, "model": "logistic_regression", **metrics})
+        eligible = (
+            metrics["macro_f1"] > baseline_metrics["macro_f1"]
+            and metrics["danger_recall"] >= baseline_metrics["danger_recall"]
+        )
+        best_name = "logistic_regression" if eligible else "baseline"
+        best_model = model if eligible else None
+        best_pred = pred if eligible else baseline_pred
 
         selected[horizon] = best_name
         if best_model is not None:
@@ -213,6 +235,7 @@ def train(input_csv: Path, output_dir: Path, settings: MiniFloodSettings) -> dic
         "warning_level_cm": settings.warning_level_cm,
         "danger_level_cm": settings.danger_level_cm,
         "selected_models": {str(k): v for k, v in selected.items()},
+        "algorithm_policy": "logistic_regression_only",
         "learned_models_ready": learned_ready,
         "train_experiments": sorted(train_df["experiment_id"].unique().tolist()),
         "test_experiments": sorted(test_df["experiment_id"].unique().tolist()),

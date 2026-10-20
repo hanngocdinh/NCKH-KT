@@ -22,6 +22,10 @@ env/
 *.swo
 .DS_Store
 Thumbs.db
+.pio/
+**/.pio/
+build/
+compile_commands.json
 
 # Large raw crawler cache directories (>500MB raw PDFs)
 # (Processed CSV datasets and trained models remain tracked in the repository)
@@ -38,12 +42,18 @@ token*.json
 .env*
 archive/google_docs_oauth/client_secret.json
 archive/google_docs_oauth/token.json
+legacy/hoian_24h/tools/client_secret.json
+legacy/hoian_24h/tools/token.json
 
 # Mini flood runtime data and local model artifacts
 mini_flood.sqlite3
 mini_flood.sqlite3-*
 models/mini_flood_15m.joblib
 models/mini_flood_30m.joblib
+models/mini_flood_metadata.json
+models/mini_flood_benchmark.csv
+models/mini_flood_confusion_matrices.png
+telemetry_experiments.csv
 
 # Intermediate document render artifacts
 work/proposal_render*/

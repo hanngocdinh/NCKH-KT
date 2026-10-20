@@ -58,10 +58,15 @@ def test_api_warms_up_then_predicts_and_deduplicates(tmp_path):
             final = response.json()
         assert first["quality_status"] in {"unknown", "warming_up"}
         assert final["quality_status"] == "valid"
-        assert final["predictions"] is not None
+        assert "predictions" not in final
+        latest = client.get(
+            "/api/v1/stations/mini-flood-station-01/latest", headers=headers
+        ).json()
+        assert latest["risk_15m"] is not None
+        assert latest["risk_30m"] is not None
         duplicate = client.post("/api/v1/telemetry", json=body, headers=headers).json()
         assert duplicate["duplicate"] is True
-        assert duplicate["predictions"] == final["predictions"]
+        assert "predictions" not in duplicate
 
 
 def test_current_danger_level_overrides_warmup(tmp_path):
@@ -73,9 +78,14 @@ def test_current_danger_level_overrides_warmup(tmp_path):
         )
         assert response.status_code == 200
         result = response.json()
-        assert result["rule_override"] is True
-        assert result["predictions"]["15m"]["risk_level"] == 2
-        assert result["predictions"]["30m"]["risk_level"] == 2
+        assert "predictions" not in result
+        latest = client.get(
+            "/api/v1/stations/mini-flood-station-01/latest",
+            headers={"X-Device-Key": "test-key"},
+        ).json()
+        assert latest["rule_override"] == 1
+        assert latest["risk_15m"] == 2
+        assert latest["risk_30m"] == 2
 
 
 def test_api_validation_and_health(tmp_path):

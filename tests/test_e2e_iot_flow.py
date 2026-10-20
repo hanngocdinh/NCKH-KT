@@ -59,15 +59,17 @@ def test_scenario_normal(tmp_path):
 
     # Các bản ghi đầu đang thu thập lịch sử hoặc có cờ stale do thời gian quá khứ
     assert responses[0]["quality_status"] in {"unknown", "warming_up"}
-    assert responses[0]["predictions"] is None
+    assert "predictions" not in responses[0]
 
     # Bản ghi cuối (thời điểm hiện tại) có dữ liệu hợp lệ và AI dự báo Mức 0
     last_res = responses[-1]
     assert last_res["quality_status"] == "valid"
-    assert last_res["predictions"] is not None
-    assert last_res["predictions"]["15m"]["risk_level"] == 0
-    assert last_res["predictions"]["30m"]["risk_level"] == 0
-    assert last_res["rule_override"] is False
+    assert "predictions" not in last_res
+    latest = db.latest("mini-flood-station-01")
+    assert latest is not None
+    assert latest["risk_15m"] == 0
+    assert latest["risk_30m"] == 0
+    assert latest["rule_override"] == 0
 
     # Xác nhận cơ sở dữ liệu không sinh bất kỳ cảnh báo nào
     with db.connect() as conn:
@@ -101,9 +103,11 @@ def test_scenario_warning(tmp_path):
 
     last_res = responses[-1]
     assert last_res["quality_status"] == "valid"
-    assert last_res["predictions"] is not None
-    assert last_res["predictions"]["15m"]["risk_level"] >= 1
-    assert last_res["main_factor"] is not None
+    assert "predictions" not in last_res
+    latest = db.latest("mini-flood-station-01")
+    assert latest is not None
+    assert latest["risk_15m"] >= 1
+    assert latest["main_factor"] is not None
 
     # Kiểm tra database: AlertManager phải enqueue một sự kiện escalation
     with db.connect() as conn:
@@ -141,11 +145,13 @@ def test_scenario_danger(tmp_path):
 
     data = res.json()
     assert data["accepted"] is True
-    assert data["rule_override"] is True
-    assert data["predictions"] is not None
-    assert data["predictions"]["15m"]["risk_level"] == 2
-    assert data["predictions"]["30m"]["risk_level"] == 2
-    assert "vượt ngưỡng nguy hiểm" in data["main_factor"]
+    assert "predictions" not in data
+    latest = db.latest("mini-flood-station-01")
+    assert latest is not None
+    assert latest["rule_override"] == 1
+    assert latest["risk_15m"] == 2
+    assert latest["risk_30m"] == 2
+    assert "vượt ngưỡng nguy hiểm" in latest["main_factor"]
 
     # Kiểm tra database: AlertManager phải enqueue ngay một sự kiện escalation Mức 2
     with db.connect() as conn:

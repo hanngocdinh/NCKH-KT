@@ -35,21 +35,11 @@ class TelemetryPayload(BaseModel):
         return flags
 
 
-class PredictionResult(BaseModel):
-    risk_level: int = Field(ge=0, le=2)
-    risk_label: str
-    probabilities: list[float]
-
-
 class TelemetryResponse(BaseModel):
     accepted: bool
     duplicate: bool = False
     quality_status: str
     server_timestamp: datetime
-    predictions: dict[str, PredictionResult] | None
-    model_version: str | None = None
-    main_factor: str | None = None
-    rule_override: bool = False
 
 
 class ExperimentStart(BaseModel):

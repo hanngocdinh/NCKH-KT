@@ -8,9 +8,9 @@
 - `mini_flood/`: SQLite, feature engine, model registry và cảnh báo.
 - `app_mini_flood_dashboard.py`: dashboard Streamlit.
 - `train_mini_flood_models.py`: tạo nhãn, chia theo lần thí nghiệm và huấn luyện model 15/30 phút.
-- `simulation_wokwi/sketch_http.ino`: firmware ESP32 mẫu.
+- `firmware/esp32_http/mini_flood_station.ino`: firmware ESP32 mẫu.
 
-Model 24 giờ cũ không bị thay đổi. Khi chưa có model 15/30 phút, API tự dùng baseline theo ngưỡng và ghi version `mini-flood-baseline-v1`.
+Khi chưa có model 15/30 phút được huấn luyện, backend tự dùng baseline theo quy tắc ngưỡng và ghi version `mini-flood-baseline-v1`.
 
 ## 2. Cấu hình
 
@@ -76,6 +76,19 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/telemetry -Head
 
 API trả `warming_up` cho đến khi có tối thiểu 15 phút lịch sử. Nếu mực nước vượt ngưỡng nguy hiểm, luật an toàn vẫn cảnh báo ngay.
 
+Phản hồi HTTP chỉ xác nhận bản ghi đã được nhận:
+
+```json
+{
+  "accepted": true,
+  "duplicate": false,
+  "quality_status": "valid",
+  "server_timestamp": "2026-10-18T10:00:00Z"
+}
+```
+
+Dự báo không được gửi ngược về ESP32. Dashboard và hệ thống thông báo đọc kết quả đã lưu trong backend.
+
 Trước mỗi lần chạy mô hình, đăng ký mã thí nghiệm và loại kịch bản:
 
 ```powershell
@@ -101,13 +114,15 @@ Invoke-WebRequest "http://localhost:8000/api/v1/experiments/export.csv?device_id
 
 ## 4. Kết nối ESP32
 
-Trong `simulation_wokwi/sketch_http.ino`, đổi:
+Trong `firmware/esp32_http/mini_flood_station.ino`, đổi:
 
 - `API_URL` thành IP LAN của laptop, ví dụ `http://192.168.1.100:8000/api/v1/telemetry`.
 - `DEVICE_KEY` khớp với `MINI_FLOOD_DEVICE_KEY`.
 - Wi-Fi SSID và mật khẩu khi dùng mạch thật.
 
 Firmware giữ tối đa 100 bản ghi trong RAM và gửi lại khi Wi-Fi hoạt động. `sequence_no` được lưu trong NVS để hạn chế trùng sau khi mất nguồn.
+
+Firmware không đọc cấp cảnh báo từ response và không điều khiển LED hoặc còi.
 
 Wokwi dùng biến trở để giả lập mưa. Cảm biến mưa RS485 thật cần được thay bằng hàm đọc Modbus theo đúng datasheet, địa chỉ thanh ghi và hệ số quy đổi của thiết bị.
 
@@ -128,9 +143,10 @@ python train_mini_flood_models.py --input telemetry_experiments.csv
 Script:
 
 - Tạo feature chỉ từ dữ liệu quá khứ.
+- Chỉ sử dụng `rain_rate_mmh`, `rain_sum_5m`, `water_level_cm` và `water_rise_2m_cm`.
 - Tạo nhãn bằng mực nước tương lai 15/30 phút.
 - Chia train/test theo `experiment_id` và thời gian.
-- So sánh baseline, Logistic Regression và Random Forest.
+- Huấn luyện Multinomial Logistic Regression và so sánh với baseline.
 - Chỉ lưu model học máy khi Macro-F1 tốt hơn baseline và Recall nguy hiểm không thấp hơn baseline.
 - Xuất benchmark, metadata và hai confusion matrix trong `models/`.
 

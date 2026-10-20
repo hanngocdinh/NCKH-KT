@@ -8,12 +8,8 @@ from pathlib import Path
 FEATURE_NAMES = (
     "rain_rate_mmh",
     "rain_sum_5m",
-    "rain_sum_15m",
-    "rain_sum_30m",
     "water_level_cm",
-    "water_rise_5m_cm",
-    "water_rise_15m_cm",
-    "missing_ratio_15m",
+    "water_rise_2m_cm",
 )
 
 
