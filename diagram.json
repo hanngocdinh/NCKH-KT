@@ -51,6 +51,66 @@
       "top": 245,
       "left": -230,
       "attrs": { "text": "NUM MUA DU PHONG" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_wifi",
+      "top": 150,
+      "left": 150,
+      "attrs": { "color": "blue", "label": "WIFI GPIO25" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_wifi",
+      "top": 210,
+      "left": 159.6,
+      "rotate": 90,
+      "attrs": { "value": "330" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_backend",
+      "top": 150,
+      "left": 250,
+      "attrs": { "color": "green", "label": "BACKEND GPIO26" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_backend",
+      "top": 210,
+      "left": 259.6,
+      "rotate": 90,
+      "attrs": { "value": "330" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_water",
+      "top": 150,
+      "left": 350,
+      "attrs": { "color": "yellow", "label": "WATER GPIO27" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_water",
+      "top": 210,
+      "left": 359.6,
+      "rotate": 90,
+      "attrs": { "value": "330" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_rain",
+      "top": 150,
+      "left": 450,
+      "attrs": { "color": "white", "label": "RAIN GPIO33" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_rain",
+      "top": 210,
+      "left": 459.6,
+      "rotate": 90,
+      "attrs": { "value": "330" }
     }
   ],
   "connections": [
@@ -69,7 +129,23 @@
 
     [ "esp:GND.2", "rain_pot:GND", "black", [ "v0" ] ],
     [ "esp:3V3", "rain_pot:VCC", "red", [ "v0" ] ],
-    [ "esp:34", "rain_pot:SIG", "purple", [ "v0" ] ]
+    [ "esp:34", "rain_pot:SIG", "purple", [ "v0" ] ],
+
+    [ "esp:25", "led_wifi:A", "blue", [ "v0" ] ],
+    [ "led_wifi:C", "r_wifi:1", "black", [ "v0" ] ],
+    [ "r_wifi:2", "esp:GND.2", "black", [ "v0" ] ],
+
+    [ "esp:26", "led_backend:A", "green", [ "v0" ] ],
+    [ "led_backend:C", "r_backend:1", "black", [ "v0" ] ],
+    [ "r_backend:2", "esp:GND.2", "black", [ "v0" ] ],
+
+    [ "esp:27", "led_water:A", "yellow", [ "v0" ] ],
+    [ "led_water:C", "r_water:1", "black", [ "v0" ] ],
+    [ "r_water:2", "esp:GND.2", "black", [ "v0" ] ],
+
+    [ "esp:33", "led_rain:A", "white", [ "v0" ] ],
+    [ "led_rain:C", "r_rain:1", "black", [ "v0" ] ],
+    [ "r_rain:2", "esp:GND.2", "black", [ "v0" ] ]
   ],
   "dependencies": {}
 }
