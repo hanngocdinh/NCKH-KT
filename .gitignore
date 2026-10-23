@@ -5,6 +5,7 @@ __pycache__/
 
 # Testing & Type Checking Caches
 .pytest_cache/
+.codex-pytest-temp/
 .mypy_cache/
 .coverage
 htmlcov/

@@ -40,6 +40,9 @@ class MiniFloodSettings:
     expected_interval_seconds: int = 60
     notification_worker_enabled: bool = True
     notification_poll_seconds: int = 15
+    mdns_enabled: bool = False
+    mdns_hostname: str = "mini-flood-backend"
+    mdns_port: int = 8000
 
     @classmethod
     def from_env(cls) -> "MiniFloodSettings":
@@ -56,4 +59,8 @@ class MiniFloodSettings:
             expected_interval_seconds=int(os.getenv("MINI_FLOOD_INTERVAL_SECONDS", "60")),
             notification_worker_enabled=_env_bool("MINI_FLOOD_NOTIFICATION_WORKER", True),
             notification_poll_seconds=int(os.getenv("MINI_FLOOD_NOTIFICATION_POLL_SECONDS", "15")),
+            mdns_enabled=_env_bool("MINI_FLOOD_MDNS_ENABLED", True),
+            mdns_hostname=os.getenv("MINI_FLOOD_MDNS_HOSTNAME", "mini-flood-backend")
+            .removesuffix(".local"),
+            mdns_port=int(os.getenv("MINI_FLOOD_MDNS_PORT", "8000")),
         )

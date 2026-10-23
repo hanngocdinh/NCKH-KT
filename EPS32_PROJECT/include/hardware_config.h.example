@@ -1,0 +1,47 @@
+#pragma once
+
+// Sao chep file nay thanh include/hardware_config.h khi build real_hardware.
+// Khong bat RS485 cho den khi da doi chieu dung datasheet cam bien mua.
+
+// --- Cam bien muc nuoc ---
+// 1: HC-SR04 GPIO18/19. 0: cam bien analog GPIO34.
+#define MINI_FLOOD_WATER_SENSOR_HCSR04 1
+#define MINI_FLOOD_WATER_HCSR04_TRIG_PIN 18
+#define MINI_FLOOD_WATER_HCSR04_ECHO_PIN 19
+
+// Tham so ben duoi chi dung khi MINI_FLOOD_WATER_SENSOR_HCSR04=0.
+// Dat = 1 sau khi da do ADC tai muc 0 cm va muc day cua phan vach dong.
+#define MINI_FLOOD_WATER_CALIBRATED 0
+#define MINI_FLOOD_WATER_ADC_DRY 0
+#define MINI_FLOOD_WATER_ADC_FULL 3000
+#define MINI_FLOOD_WATER_SENSOR_RANGE_CM 4.0f
+
+// Neu cam bien cho gia tri giam khi muc nuoc tang, doi thanh 1.
+#define MINI_FLOOD_WATER_ADC_INVERTED 0
+
+// --- Probe ket noi RS485 chi-doc ---
+// Probe giup kiem tra ESP32 -> module -> cam bien ma khong coi register mau la
+// du lieu luong mua. Phan hoi exception co CRC dung van chung minh link dang thong.
+#define MINI_FLOOD_RS485_PROBE_ENABLED 1
+#define MINI_FLOOD_RS485_PROBE_FUNCTION 0x03
+#define MINI_FLOOD_RS485_PROBE_REGISTER 0x0000
+#define MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED 1
+#define MINI_FLOOD_RS485_DISCOVERY_RETRY_MS 60000UL
+
+// --- Cam bien mua Modbus RTU qua UART2 GPIO16/17 ---
+// Dat = 1 chi sau khi dien dung cac tham so tu datasheet.
+#define MINI_FLOOD_RAIN_MODBUS_CONFIGURED 0
+// SW-3001-GYL-N01 mac dinh nha may la 4800. Doi theo datasheet neu dung model khac.
+#define MINI_FLOOD_RAIN_MODBUS_BAUD 4800
+#define MINI_FLOOD_RAIN_MODBUS_SERIAL_CONFIG SERIAL_8N1
+#define MINI_FLOOD_RAIN_MODBUS_SLAVE_ID 1
+#define MINI_FLOOD_RAIN_MODBUS_FUNCTION 0x03
+#define MINI_FLOOD_RAIN_MODBUS_REGISTER 0x0000
+#define MINI_FLOOD_RAIN_MODBUS_SCALE 0.1f
+
+// 0: thanh ghi tra ve cuong do mua (mm/h).
+// 1: thanh ghi tra ve tong luong mua tich luy (mm); firmware tu tinh delta.
+#define MINI_FLOOD_RAIN_VALUE_MODE 1
+
+// Gioi han hop ly de phat hien frame/register sai.
+#define MINI_FLOOD_RAIN_MAX_RATE_MMH 500.0f

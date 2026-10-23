@@ -17,6 +17,7 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, WebS
 from fastapi.responses import StreamingResponse
 
 from mini_flood import MiniFloodService, MiniFloodSettings
+from mini_flood.mdns_advertiser import MdnsAdvertiser
 from mini_flood.schemas import ExperimentStart, StationConfigUpdate, TelemetryPayload, TelemetryResponse
 from mini_flood.service import StationNotConfiguredError
 
@@ -25,6 +26,11 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
     resolved = settings or MiniFloodSettings.from_env()
     service = MiniFloodService(resolved)
     stop_event = threading.Event()
+    mdns = MdnsAdvertiser(
+        hostname=resolved.mdns_hostname,
+        port=resolved.mdns_port,
+        enabled=resolved.mdns_enabled,
+    )
 
     def delivery_loop() -> None:
         while not stop_event.wait(resolved.notification_poll_seconds):
@@ -33,6 +39,18 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         worker: threading.Thread | None = None
+        mdns_stop_event = threading.Event()
+        mdns_thread: threading.Thread | None = None
+        # mDNS la tien ich discovery, khong duoc chan FastAPI khoi dong neu
+        # Windows Firewall/multicast dang loi.
+        if resolved.mdns_enabled:
+            mdns_thread = threading.Thread(
+                target=mdns.run,
+                args=(mdns_stop_event,),
+                name="mini-flood-mdns",
+                daemon=True,
+            )
+            mdns_thread.start()
         if resolved.notification_worker_enabled:
             worker = threading.Thread(target=delivery_loop, name="mini-flood-alert-worker", daemon=True)
             worker.start()
@@ -40,6 +58,11 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         stop_event.set()
         if worker:
             worker.join(timeout=2)
+        mdns_stop_event.set()
+        if mdns_thread:
+            # Registration/unregistration may be stuck inside the third-party
+            # zeroconf stack. The daemon thread must never hold API shutdown.
+            await asyncio.to_thread(mdns_thread.join, 2)
 
     api = FastAPI(
         title="Mini Flood AI API",

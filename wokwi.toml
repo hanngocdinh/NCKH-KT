@@ -1,4 +1,4 @@
 [wokwi]
 version = 1
-firmware = "EPS32_PROJECT/.pio/build/esp32dev/firmware.bin"
-elf = "EPS32_PROJECT/.pio/build/esp32dev/firmware.elf"
+firmware = "EPS32_PROJECT/.pio/build/simulation/firmware.bin"
+elf = "EPS32_PROJECT/.pio/build/simulation/firmware.elf"

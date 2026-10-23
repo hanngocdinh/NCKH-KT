@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#f8fbff"/><stop offset="1" stop-color="#edf4fa"/></linearGradient>
+    <linearGradient id="pcb" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1d2937"/><stop offset="1" stop-color="#0b1119"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-opacity=".18"/></filter>
+    <style>
+      .title{font:700 42px Arial,sans-serif;fill:#073763}.sub{font:600 22px Arial,sans-serif;fill:#315b7d}
+      .h{font:700 25px Arial,sans-serif;fill:#073763}.t{font:500 19px Arial,sans-serif;fill:#14283b}.pin{font:700 17px Consolas,monospace;fill:#fff}
+      .note{font:700 19px Arial,sans-serif;fill:#b42318}.small{font:600 16px Arial,sans-serif;fill:#27445e}
+      .wire{fill:none;stroke-width:9;stroke-linecap:round;stroke-linejoin:round}.dot{stroke:#fff;stroke-width:3}
+    </style>
+  </defs>
+  <rect width="1600" height="1050" fill="url(#bg)"/>
+  <rect x="25" y="20" width="1550" height="82" rx="20" fill="#073763"/>
+  <text x="800" y="72" text-anchor="middle" fill="#fff" font-family="Arial" font-size="38" font-weight="700">SƠ ĐỒ KẾT NỐI ESP32 – HC-SR04 – CẢM BIẾN MƯA RS485</text>
+
+  <!-- Adapter -->
+  <g filter="url(#shadow)">
+    <rect x="55" y="160" width="220" height="210" rx="25" fill="#20252b"/>
+    <rect x="82" y="185" width="166" height="120" rx="18" fill="#11161b"/>
+    <path d="M105 305v43M145 305v43" stroke="#b9c1c8" stroke-width="16"/>
+    <text x="165" y="400" text-anchor="middle" class="h">Adapter 12V DC</text>
+  </g>
+
+  <!-- Main expansion board -->
+  <g filter="url(#shadow)">
+    <rect x="395" y="145" width="600" height="530" rx="28" fill="url(#pcb)" stroke="#43576a" stroke-width="4"/>
+    <text x="695" y="187" text-anchor="middle" fill="#fff" font-family="Arial" font-size="25" font-weight="700">ESP32 DEVKIT + BOARD MỞ RỘNG</text>
+    <rect x="555" y="220" width="280" height="300" rx="16" fill="#116a72" stroke="#a9d5d7" stroke-width="3"/>
+    <rect x="590" y="260" width="210" height="190" rx="8" fill="#d8dadd"/>
+    <text x="695" y="350" text-anchor="middle" font-family="Arial" font-size="36" font-weight="700" fill="#4b5563">ESP32</text>
+    <text x="695" y="386" text-anchor="middle" class="small">DevKit</text>
+    <rect x="412" y="240" width="78" height="55" rx="8" fill="#2b3037" stroke="#9ba7b3" stroke-width="3"/>
+    <circle cx="425" cy="267" r="12" fill="#101418"/><text x="450" y="274" class="pin">VIN</text>
+    <text x="452" y="225" text-anchor="middle" fill="#fff" font-family="Arial" font-size="16">DC 7–24V</text>
+    <!-- Terminal block -->
+    <g>
+      <rect x="435" y="565" width="125" height="65" rx="7" fill="#e9483f"/><text x="497" y="606" text-anchor="middle" class="pin">5V</text>
+      <rect x="575" y="565" width="125" height="65" rx="7" fill="#e1b21d"/><text x="637" y="606" text-anchor="middle" class="pin">3V3</text>
+      <rect x="715" y="565" width="125" height="65" rx="7" fill="#303943"/><text x="777" y="606" text-anchor="middle" class="pin">GND</text>
+      <rect x="862" y="230" width="105" height="55" rx="7" fill="#e67e22"/><text x="914" y="265" text-anchor="middle" class="pin">GPIO18</text>
+      <rect x="862" y="305" width="105" height="55" rx="7" fill="#2474c7"/><text x="914" y="340" text-anchor="middle" class="pin">GPIO19</text>
+      <rect x="862" y="425" width="105" height="55" rx="7" fill="#169c8b"/><text x="914" y="460" text-anchor="middle" class="pin">GPIO16</text>
+      <rect x="862" y="500" width="105" height="55" rx="7" fill="#4f68c8"/><text x="914" y="535" text-anchor="middle" class="pin">GPIO17</text>
+    </g>
+  </g>
+
+  <!-- HC-SR04 -->
+  <g filter="url(#shadow)">
+    <rect x="1180" y="145" width="345" height="220" rx="18" fill="#1677b8" stroke="#0d4f7d" stroke-width="5"/>
+    <circle cx="1270" cy="245" r="57" fill="#d9e1e7" stroke="#384650" stroke-width="10"/><circle cx="1435" cy="245" r="57" fill="#d9e1e7" stroke="#384650" stroke-width="10"/>
+    <circle cx="1270" cy="245" r="38" fill="#2f3c46"/><circle cx="1435" cy="245" r="38" fill="#2f3c46"/>
+    <text x="1353" y="130" text-anchor="middle" class="h">HC-SR04 – đo mực nước</text>
+    <text x="1215" y="344" text-anchor="middle" class="pin">VCC</text><text x="1305" y="344" text-anchor="middle" class="pin">TRIG</text>
+    <text x="1395" y="344" text-anchor="middle" class="pin">ECHO</text><text x="1482" y="344" text-anchor="middle" class="pin">GND</text>
+  </g>
+
+  <!-- HC wiring -->
+  <path class="wire" stroke="#f05a28" d="M497 565 V535 H1115 V390 H1215 V365"/>
+  <path class="wire" stroke="#e67e22" d="M967 258 H1080 V410 H1305 V365"/>
+  <path class="wire" stroke="#111820" d="M777 630 V705 H1545 V390 H1482 V365"/>
+  <!-- echo divider -->
+  <path class="wire" stroke="#2474c7" d="M1395 365 V435 H1305"/>
+  <rect x="1215" y="417" width="90" height="36" rx="8" fill="#fff" stroke="#704f25" stroke-width="3"/>
+  <path d="M1230 435l10-12 10 24 10-24 10 24 10-24 10 12" fill="none" stroke="#704f25" stroke-width="4"/>
+  <text x="1260" y="405" text-anchor="middle" class="small">1 kΩ</text>
+  <circle cx="1175" cy="435" r="10" fill="#2474c7" class="dot"/>
+  <path class="wire" stroke="#2474c7" d="M1215 435 H1175 V333 H967"/>
+  <path stroke="#704f25" stroke-width="5" d="M1175 435v30l-12 10 24 12-24 12 24 12-12 10v25" fill="none"/>
+  <text x="1118" y="505" class="small">2 kΩ</text>
+  <path class="wire" stroke="#111820" d="M1175 546v44h-70"/>
+  <path d="M1075 590h60M1085 605h40M1095 620h20" stroke="#111820" stroke-width="5"/>
+  <rect x="1110" y="650" width="430" height="96" rx="16" fill="#fff4f2" stroke="#ef4444" stroke-width="3"/>
+  <text x="1325" y="686" text-anchor="middle" class="note">Bộ chia áp ECHO: 5V → khoảng 3.3V</text>
+  <text x="1325" y="719" text-anchor="middle" class="note">Không nối ECHO 5V trực tiếp vào ESP32</text>
+
+  <!-- 12V supply wire -->
+  <path class="wire" stroke="#e32626" d="M275 250 H412"/><path class="wire" stroke="#111820" d="M275 280 H360 V320 H412"/>
+  <text x="330" y="238" class="small" fill="#c51f1f">+12V</text><text x="325" y="310" class="small">GND</text>
+
+  <!-- RS485 module -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="760" width="425" height="205" rx="24" fill="#fff" stroke="#6d7f91" stroke-width="5"/>
+    <text x="282" y="801" text-anchor="middle" class="h">BỘ CHUYỂN TTL ↔ RS485 3.3V</text>
+    <rect x="105" y="830" width="95" height="110" rx="8" fill="#263747"/>
+    <text x="152" y="856" text-anchor="middle" class="pin">VCC</text><text x="152" y="880" text-anchor="middle" class="pin">GND</text>
+    <text x="152" y="904" text-anchor="middle" class="pin">TXD</text><text x="152" y="928" text-anchor="middle" class="pin">RXD</text>
+    <rect x="370" y="835" width="90" height="95" rx="8" fill="#188b55"/><text x="415" y="874" text-anchor="middle" class="pin">A</text><text x="415" y="912" text-anchor="middle" class="pin">B</text>
+    <text x="280" y="867" text-anchor="middle" class="small">TXD → GPIO16 (RX2)</text>
+    <text x="280" y="904" text-anchor="middle" class="small">RXD ← GPIO17 (TX2)</text>
+  </g>
+
+  <!-- RS485 sensor -->
+  <g filter="url(#shadow)">
+    <circle cx="1335" cy="885" r="118" fill="#f4f6f8" stroke="#93a2af" stroke-width="8"/>
+    <circle cx="1335" cy="870" r="67" fill="#bbc8cf" stroke="#53636f" stroke-width="8"/>
+    <path d="M1285 830h100M1275 850h120M1270 870h130M1275 890h120M1285 910h100" stroke="#52616c" stroke-width="7"/>
+    <rect x="1260" y="965" width="150" height="60" rx="8" fill="#344552"/>
+    <text x="1335" y="757" text-anchor="middle" class="h">CẢM BIẾN MƯA RS485</text>
+    <text x="1290" y="1002" text-anchor="middle" class="pin">A</text><text x="1335" y="1002" text-anchor="middle" class="pin">B</text><text x="1380" y="1002" text-anchor="middle" class="pin">V+/GND</text>
+  </g>
+
+  <!-- TTL logic wires -->
+  <path class="wire" stroke="#e1b21d" d="M637 630 V720 H120 V830"/>
+  <path class="wire" stroke="#111820" d="M777 675 V740 H165 V830"/>
+  <path class="wire" stroke="#169c8b" d="M862 453 H750 V730 H225 V875 H200"/>
+  <path class="wire" stroke="#4f68c8" d="M862 528 H790 V710 H245 V915 H200"/>
+  <!-- RS485 A/B and sensor power -->
+  <path class="wire" stroke="#7b2cbf" d="M460 872 H1040 V985 H1290"/>
+  <path class="wire" stroke="#b55cd6" d="M460 912 H1005 V1010 H1335"/>
+  <path class="wire" stroke="#e32626" d="M275 250 H330 V1000 H1120 V1022 H1380" opacity=".9"/>
+  <path class="wire" stroke="#111820" d="M275 280 H310 V1030 H1140 V1038 H1410"/>
+
+  <!-- Legend -->
+  <rect x="520" y="790" width="535" height="205" rx="20" fill="#fff" stroke="#b4c3d0" stroke-width="3"/>
+  <text x="787" y="828" text-anchor="middle" class="h">KẾT NỐI BẮT BUỘC</text>
+  <text x="550" y="866" class="t">• HC-SR04: 5V, GND, TRIG GPIO18, ECHO qua chia áp → GPIO19</text>
+  <text x="550" y="902" class="t">• UART2: GPIO17 TX2 → RXD; GPIO16 RX2 ← TXD</text>
+  <text x="550" y="938" class="t">• RS485: A nối A, B nối B; dùng cặp dây xoắn</text>
+  <text x="550" y="974" class="t">• Tất cả thiết bị phải dùng chung GND</text>
+</svg>
