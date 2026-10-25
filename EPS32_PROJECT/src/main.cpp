@@ -184,8 +184,8 @@ bool discoverBackend(bool force = false) {
 
 String healthJson() {
   bool wifiConnected = WiFi.status() == WL_CONNECTED;
-  bool overallOk = wifiConnected && backendConnected &&
-                   waterSensorConnected && rainSensorVerified;
+  bool overallOk = wifiConnected && backendConnected && waterSensorConnected &&
+                   rainSensorVerified;
   String json = "{";
   json += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   json += "\"hardware_profile\":\"" + String(HARDWARE_PROFILE) + "\",";
@@ -222,9 +222,12 @@ String healthJson() {
   json += "\"mode\":\"" + rainSensorMode + "\"";
   json += "},";
   json += "\"rs485\":{";
-  json += "\"configured\":" + jsonBool(MINI_FLOOD_RAIN_MODBUS_CONFIGURED != 0) + ",";
-  json += "\"probe_enabled\":" + jsonBool(MINI_FLOOD_RS485_PROBE_ENABLED != 0) + ",";
-  json += "\"auto_discovery_enabled\":" + jsonBool(MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED != 0) + ",";
+  json += "\"configured\":" + jsonBool(MINI_FLOOD_RAIN_MODBUS_CONFIGURED != 0) +
+          ",";
+  json += "\"probe_enabled\":" + jsonBool(MINI_FLOOD_RS485_PROBE_ENABLED != 0) +
+          ",";
+  json += "\"auto_discovery_enabled\":" +
+          jsonBool(MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED != 0) + ",";
   json += "\"discovered\":" + jsonBool(rainModbusDiscovered) + ",";
   json += "\"baud\":" + String(activeRainBaud) + ",";
   json += "\"slave_id\":" + String(activeRainSlaveId) + ",";
@@ -236,9 +239,11 @@ String healthJson() {
   if (MINI_FLOOD_RAIN_MODBUS_CONFIGURED)
     rs485Reason = rainSensorVerified ? "measurement_ok" : "measurement_failed";
   else if (rs485Connected)
-    rs485Reason = lastRs485Exception ? "probe_exception_response" : "probe_ok_measurement_map_missing";
+    rs485Reason = lastRs485Exception ? "probe_exception_response"
+                                     : "probe_ok_measurement_map_missing";
   else
-    rs485Reason = MINI_FLOOD_RS485_PROBE_ENABLED ? "probe_no_response" : "probe_disabled";
+    rs485Reason =
+        MINI_FLOOD_RS485_PROBE_ENABLED ? "probe_no_response" : "probe_disabled";
   json += "\"reason\":\"" + rs485Reason + "\"";
   json += "},";
   json += "\"queue_count\":" + String(queueCount) + ",";
@@ -248,13 +253,13 @@ String healthJson() {
 }
 
 void printHealth() {
-  Serial.printf(
-      "[HEALTH] profile=%s wifi=%s backend=%s(http=%d) water=%s rain=%s rs485=%s\n",
-      HARDWARE_PROFILE,
-      WiFi.status() == WL_CONNECTED ? "OK" : "FAIL",
-      backendConnected ? "OK" : "FAIL", lastHttpStatus,
-      waterSensorConnected ? "OK" : "FAIL", rainSensorMode.c_str(),
-      rs485Connected ? (rainSensorVerified ? "DATA_OK" : "LINK_OK") : "FAIL");
+  Serial.printf("[HEALTH] profile=%s wifi=%s backend=%s(http=%d) water=%s "
+                "rain=%s rs485=%s\n",
+                HARDWARE_PROFILE, WiFi.status() == WL_CONNECTED ? "OK" : "FAIL",
+                backendConnected ? "OK" : "FAIL", lastHttpStatus,
+                waterSensorConnected ? "OK" : "FAIL", rainSensorMode.c_str(),
+                rs485Connected ? (rainSensorVerified ? "DATA_OK" : "LINK_OK")
+                               : "FAIL");
 }
 
 void updateStatusLeds() {
@@ -325,8 +330,8 @@ float readRealWaterDistance(bool &valid) {
   }
   valid = validCount >= 2;
   lastWaterDistanceCM = valid ? distanceTotal / validCount : -1.0f;
-  lastWaterLevelCM = valid ? max(0.0f, SENSOR_MOUNT_HEIGHT_CM - lastWaterDistanceCM)
-                            : 0.0f;
+  lastWaterLevelCM =
+      valid ? max(0.0f, SENSOR_MOUNT_HEIGHT_CM - lastWaterDistanceCM) : 0.0f;
   return lastWaterLevelCM;
 }
 
@@ -381,7 +386,8 @@ bool discoverRainSensorAtBaud(uint32_t baud, uint8_t &discoveredAddress) {
     return false;
   uint16_t responseCrc = static_cast<uint16_t>(response[5]) |
                          (static_cast<uint16_t>(response[6]) << 8);
-  if (modbusCrc16(response, 5) != responseCrc || response[0] != 0xFF ||
+  if (modbusCrc16(response, 5) != responseCrc ||
+      (response[0] != 0xFF && response[0] != response[4]) ||
       response[1] != 0x03 || response[2] != 0x02 || response[3] != 0x00 ||
       response[4] == 0x00 || response[4] == 0xFF) {
     return false;
@@ -420,7 +426,8 @@ bool discoverRainSensorModbus() {
   delay(30);
   Serial2.begin(activeRainBaud, MINI_FLOOD_RAIN_MODBUS_SERIAL_CONFIG,
                 PIN_RS485_RX, PIN_RS485_TX);
-  Serial.println("[RS485-DISCOVERY] Khong tim thay cam bien; khoi phuc cau hinh mac dinh");
+  Serial.println(
+      "[RS485-DISCOVERY] Khong tim thay cam bien; khoi phuc cau hinh mac dinh");
   return false;
 }
 
@@ -572,8 +579,8 @@ float readWaterLevelCM(bool &valid) {
 
 float readRainRateMMH(bool &rainSensorValid, float intervalHours) {
   if (MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED && !rs485Connected &&
-      (lastRs485DiscoveryAt == 0 ||
-       millis() - lastRs485DiscoveryAt >= MINI_FLOOD_RS485_DISCOVERY_RETRY_MS)) {
+      (lastRs485DiscoveryAt == 0 || millis() - lastRs485DiscoveryAt >=
+                                        MINI_FLOOD_RS485_DISCOVERY_RETRY_MS)) {
     discoverRainSensorModbus();
   }
 
@@ -645,8 +652,8 @@ String buildQualityFlags(bool waterValid) {
 #if MINI_FLOOD_WATER_SENSOR_HCSR04
     flags += "\"water_sensor_invalid\"";
 #else
-    flags += MINI_FLOOD_WATER_CALIBRATED ? "\"water_sensor_invalid\"" :
-                                           "\"water_not_calibrated\"";
+    flags += MINI_FLOOD_WATER_CALIBRATED ? "\"water_sensor_invalid\""
+                                         : "\"water_not_calibrated\"";
 #endif
     hasFlag = true;
   }
@@ -837,8 +844,7 @@ void setup() {
                 MINI_FLOOD_WATER_CALIBRATED ? "yes" : "no");
 #endif
   Serial.printf("[BOOT] RS485 UART2 RX=%d TX=%d configured=%s\n", PIN_RS485_RX,
-                PIN_RS485_TX,
-                MINI_FLOOD_RAIN_MODBUS_CONFIGURED ? "yes" : "no");
+                PIN_RS485_TX, MINI_FLOOD_RAIN_MODBUS_CONFIGURED ? "yes" : "no");
   Serial.printf("[BOOT] RS485 default baud=%lu slave=%u auto_discovery=%s\n",
                 static_cast<unsigned long>(activeRainBaud), activeRainSlaveId,
                 MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED ? "yes" : "no");
