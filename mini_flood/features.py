@@ -7,7 +7,11 @@ from .config import FEATURE_NAMES
 
 
 def _parse_time(value: str | datetime) -> datetime:
-    return value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
 
 
 def _latest_at_or_before(rows: list[dict[str, Any]], target: datetime) -> dict[str, Any] | None:

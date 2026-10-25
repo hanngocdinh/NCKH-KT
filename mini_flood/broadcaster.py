@@ -12,16 +12,21 @@ class TelemetryBroadcaster:
 
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock | None = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
-        async with self._lock:
+        async with self._get_lock():
             self._subscribers.add(queue)
         return queue
 
     async def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        async with self._lock:
+        async with self._get_lock():
             self._subscribers.discard(queue)
 
     def publish_sync(self, event: dict[str, Any]) -> None:
@@ -34,7 +39,7 @@ class TelemetryBroadcaster:
 
     async def publish(self, event: dict[str, Any]) -> None:
         """Phát sự kiện từ coroutine bất đồng bộ."""
-        async with self._lock:
+        async with self._get_lock():
             for q in list(self._subscribers):
                 try:
                     q.put_nowait(event)

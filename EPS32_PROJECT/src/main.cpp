@@ -146,7 +146,11 @@ bool discoverBackend(bool force = false) {
     int count = MDNS.queryService("mini-flood", "tcp");
     for (int index = 0; index < count; index++) {
       String discoveredHost = MDNS.hostname(index);
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+      IPAddress address = MDNS.address(index);
+#else
       IPAddress address = MDNS.IP(index);
+#endif
       uint16_t port = MDNS.port(index);
       if (address == IPAddress(0, 0, 0, 0))
         continue;
@@ -754,8 +758,8 @@ void diagnoseWiFiNetwork() {
   for (int i = 0; i < networkCount; i++) {
     if (WiFi.SSID(i) == WIFI_SSID) {
       found = true;
-      Serial.printf("[WiFi] Tim thay %s: channel=%d RSSI=%ddBm\n", WIFI_SSID,
-                    WiFi.channel(i), WiFi.RSSI(i));
+      Serial.printf("[WiFi] Tim thay %s: channel=%ld RSSI=%lddBm\n", WIFI_SSID,
+                    (long)WiFi.channel(i), (long)WiFi.RSSI(i));
     }
   }
   if (!found) {

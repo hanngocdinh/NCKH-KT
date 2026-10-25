@@ -20,6 +20,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_iso(value: str) -> datetime:
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
+
+
 def send_telegram(message: str) -> tuple[bool, str]:
     token = os.getenv("MINI_FLOOD_TELEGRAM_TOKEN", "").strip()
     chat_id = os.getenv("MINI_FLOOD_TELEGRAM_CHAT_ID", "").strip()
@@ -170,7 +176,7 @@ class AlertManager:
         else:
             raw_level = 0
 
-        measured_at = datetime.fromisoformat(timestamp)
+        measured_at = _parse_iso(timestamp)
         now = measured_at.astimezone(timezone.utc)
         delivery_now = _now()
         current = previous
@@ -191,7 +197,7 @@ class AlertManager:
                     state["recovery_started_at"] = now.isoformat()
                     state["recovery_from_level"] = previous
                 else:
-                    started = datetime.fromisoformat(started_raw)
+                    started = _parse_iso(started_raw)
                     elapsed = (now - started).total_seconds()
                     if elapsed < 0:
                         state["recovery_started_at"] = now.isoformat()
@@ -209,7 +215,7 @@ class AlertManager:
 
         if current == 2 and event_type is None:
             last_raw = state.get("last_danger_alert_at")
-            last = datetime.fromisoformat(last_raw) if last_raw else None
+            last = _parse_iso(last_raw) if last_raw else None
             if last is None or delivery_now - last >= timedelta(minutes=self.settings.reminder_minutes):
                 event_type = "reminder"
 
