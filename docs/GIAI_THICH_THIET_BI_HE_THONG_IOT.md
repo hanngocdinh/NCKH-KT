@@ -68,7 +68,7 @@ UART0 qua cổng USB được dành cho nạp firmware và Serial Monitor. UART2
 [BOOT] Hardware profile: real_hardware
 ```
 
-Nếu log ghi `simulation`, firmware đang dùng cảm biến Wokwi và dữ liệu không được dùng để huấn luyện model thật.
+Firmware hiện chỉ có profile `real_hardware`; log boot phải ghi đúng profile này.
 
 ## 3. Bo mở rộng ESP32
 

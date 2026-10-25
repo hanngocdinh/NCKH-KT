@@ -1,22 +1,12 @@
 #include <Arduino.h>
 
-#if defined(MINI_FLOOD_PROFILE_SIMULATION) && defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
-#error "Chi duoc chon mot profile firmware"
-#endif
-#if !defined(MINI_FLOOD_PROFILE_SIMULATION) && !defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
-#define MINI_FLOOD_PROFILE_SIMULATION 1
-#endif
-
 /*
-  ESP32 HTTP telemetry cho prototype mô hình mini.
-  - profile simulation: HC-SR04 + bien tro trong Wokwi.
-  - profile real_hardware: HC-SR04 GPIO18/19 + Modbus RTU GPIO16/17.
+  ESP32 HTTP telemetry cho thiet bi that:
+  HC-SR04 GPIO18/19 + cam bien mua Modbus RTU GPIO16/17.
 */
 
-#include <HTTPClient.h>
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 #include <ESPmDNS.h>
-#endif
+#include <HTTPClient.h>
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
@@ -25,16 +15,14 @@
 #if __has_include("secrets.h")
 #include "secrets.h"
 #else
-// Cau hinh an toan de build/mo phong khi chua tao include/secrets.h.
-#define MINI_FLOOD_WIFI_SSID "Wokwi-GUEST"
+// Gia tri placeholder chi de firmware build duoc khi chua tao secrets.h.
+#define MINI_FLOOD_WIFI_SSID "your-2.4ghz-wifi"
 #define MINI_FLOOD_WIFI_PASSWORD ""
-#define MINI_FLOOD_API_URL "http://host.wokwi.internal:8000/api/v2/telemetry"
 #define MINI_FLOOD_BACKEND_MDNS_HOST "mini-flood-backend"
 #define MINI_FLOOD_BACKEND_MDNS_PORT 8000
 #define MINI_FLOOD_DEVICE_KEY "change-me"
 #endif
 
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 #if __has_include("hardware_config.h")
 #include "hardware_config.h"
 #else
@@ -62,21 +50,12 @@
 #define MINI_FLOOD_RAIN_VALUE_MODE 1
 #define MINI_FLOOD_RAIN_MAX_RATE_MMH 500.0f
 #endif
-#endif
 
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-#define PIN_TRIG_WATER 18
-#define PIN_ECHO_WATER 19
-#define PIN_TRIG_RAIN 5
-#define PIN_ECHO_RAIN 17
-#define PIN_RAIN_POT 34
-#else
 #define PIN_WATER_ANALOG 34
 #define PIN_TRIG_WATER MINI_FLOOD_WATER_HCSR04_TRIG_PIN
 #define PIN_ECHO_WATER MINI_FLOOD_WATER_HCSR04_ECHO_PIN
 #define PIN_RS485_RX 16
 #define PIN_RS485_TX 17
-#endif
 // LED D2 tren bo: trang thai tong hop.
 #define PIN_STATUS_LED 2
 // Bon LED ngoai, moi LED noi tu GPIO qua dien tro 220-330 ohm den GND.
@@ -87,26 +66,18 @@
 
 const char *WIFI_SSID = MINI_FLOOD_WIFI_SSID;
 const char *WIFI_PASSWORD = MINI_FLOOD_WIFI_PASSWORD;
-const char *API_URL = MINI_FLOOD_API_URL;
 const char *DEVICE_KEY = MINI_FLOOD_DEVICE_KEY;
 const char *DEVICE_ID = "mini-flood-station-01";
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 const char *BACKEND_MDNS_HOST = MINI_FLOOD_BACKEND_MDNS_HOST;
 const uint16_t BACKEND_MDNS_PORT = MINI_FLOOD_BACKEND_MDNS_PORT;
-#endif
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-const char *HARDWARE_PROFILE = "simulation";
-#else
 const char *HARDWARE_PROFILE = "real_hardware";
-#endif
 
 // Khoảng cách từ đầu dò xuống đáy để đổi khoảng cách siêu âm thành
 // water_level_cm. Đây KHÔNG phải ngưỡng tràn; ngưỡng tràn được cấu hình động ở
 // backend/dashboard.
 const float SENSOR_MOUNT_HEIGHT_CM = 40.0;
-const float RAIN_GAUGE_HEIGHT_CM = 30.0;
-// Test nhanh: 5 giây/lần. Khi nạp mạch thật: đổi lại thành 60000
-const unsigned long SEND_INTERVAL_MS = 5000;
+// Thiet bi that lay mau va gui du lieu moi 60 giay.
+const unsigned long SEND_INTERVAL_MS = 60000;
 const int BUFFER_SIZE = 100;
 String bootId;
 
@@ -132,7 +103,6 @@ int lastWaterAdcRaw = -1;
 float lastWaterLevelCM = 0.0f;
 float lastWaterDistanceCM = -1.0f;
 unsigned long lastRainResponseMs = 0;
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 bool rs485Connected = false;
 uint8_t lastRs485Exception = 0;
 size_t lastRs485ResponseBytes = 0;
@@ -142,20 +112,16 @@ bool rainModbusDiscovered = false;
 unsigned long lastRs485DiscoveryAt = 0;
 bool lastRainTotalValid = false;
 float lastRainTotalMM = 0.0f;
-#endif
 int lastHttpStatus = 0;
 unsigned long lastBackendOkAt = 0;
 WebServer healthServer(80);
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 String activeApiUrl;
 bool mdnsStarted = false;
 unsigned long lastBackendDiscoveryAt = 0;
 const unsigned long BACKEND_DISCOVERY_RETRY_MS = 30000;
-#endif
 
 String jsonBool(bool value) { return value ? "true" : "false"; }
 
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 bool discoverBackend(bool force = false) {
   if (WiFi.status() != WL_CONNECTED)
     return false;
@@ -211,7 +177,6 @@ bool discoverBackend(bool force = false) {
   }
   return activeApiUrl.length() > 0;
 }
-#endif
 
 String healthJson() {
   bool wifiConnected = WiFi.status() == WL_CONNECTED;
@@ -230,20 +195,12 @@ String healthJson() {
   json += "\"connected\":" + jsonBool(backendConnected) + ",";
   json += "\"last_http_status\":" + String(lastHttpStatus) + ",";
   json += "\"last_ok_ms\":" + String(lastBackendOkAt) + ",";
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
   json += "\"discovery\":\"mdns\",";
   json += "\"host\":\"" + String(BACKEND_MDNS_HOST) + ".local\",";
   json += "\"url\":\"" + activeApiUrl + "\"";
-#else
-  json += "\"discovery\":\"static\",";
-  json += "\"url\":\"" + String(API_URL) + "\"";
-#endif
   json += "},";
   json += "\"water_sensor\":{";
   json += "\"connected\":" + jsonBool(waterSensorConnected) + ",";
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-  json += "\"check\":\"hc_sr04_echo\"";
-#else
 #if MINI_FLOOD_WATER_SENSOR_HCSR04
   json += "\"check\":\"hc_sr04_echo\",";
   json += "\"trig_gpio\":" + String(PIN_TRIG_WATER) + ",";
@@ -255,18 +212,12 @@ String healthJson() {
   json += "\"adc_raw\":" + String(lastWaterAdcRaw) + ",";
 #endif
   json += "\"level_cm\":" + String(lastWaterLevelCM, 2);
-#endif
   json += "},";
   json += "\"rain_sensor\":{";
   json += "\"verified\":" + jsonBool(rainSensorVerified) + ",";
   json += "\"mode\":\"" + rainSensorMode + "\"";
   json += "},";
   json += "\"rs485\":{";
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-  json += "\"configured\":false,";
-  json += "\"connected\":false,";
-  json += "\"reason\":\"simulation_profile\"";
-#else
   json += "\"configured\":" + jsonBool(MINI_FLOOD_RAIN_MODBUS_CONFIGURED != 0) + ",";
   json += "\"probe_enabled\":" + jsonBool(MINI_FLOOD_RS485_PROBE_ENABLED != 0) + ",";
   json += "\"auto_discovery_enabled\":" + jsonBool(MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED != 0) + ",";
@@ -285,7 +236,6 @@ String healthJson() {
   else
     rs485Reason = MINI_FLOOD_RS485_PROBE_ENABLED ? "probe_no_response" : "probe_disabled";
   json += "\"reason\":\"" + rs485Reason + "\"";
-#endif
   json += "},";
   json += "\"queue_count\":" + String(queueCount) + ",";
   json += "\"uptime_ms\":" + String(millis());
@@ -300,11 +250,7 @@ void printHealth() {
       WiFi.status() == WL_CONNECTED ? "OK" : "FAIL",
       backendConnected ? "OK" : "FAIL", lastHttpStatus,
       waterSensorConnected ? "OK" : "FAIL", rainSensorMode.c_str(),
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
       rs485Connected ? (rainSensorVerified ? "DATA_OK" : "LINK_OK") : "FAIL");
-#else
-      "SIMULATION");
-#endif
 }
 
 void updateStatusLeds() {
@@ -312,14 +258,10 @@ void updateStatusLeds() {
   digitalWrite(PIN_LED_WIFI, wifiConnected ? HIGH : LOW);
   digitalWrite(PIN_LED_BACKEND, backendConnected ? HIGH : LOW);
   digitalWrite(PIN_LED_WATER, waterSensorConnected ? HIGH : LOW);
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
   // Tren phan cung that, LED trang xac nhan duong RS485 co frame CRC hop le.
   // Viec register co dung la luong mua hay khong duoc bao rieng boi
   // rainSensorVerified va trang /health.
   digitalWrite(PIN_LED_RAIN, rs485Connected ? HIGH : LOW);
-#else
-  digitalWrite(PIN_LED_RAIN, rainSensorVerified ? HIGH : LOW);
-#endif
 
   // D2 sang lien tuc khi tat ca cum dang san sang.
   if (wifiConnected && backendConnected && waterSensorConnected &&
@@ -344,59 +286,6 @@ void setBackendLed(bool connected) {
   digitalWrite(PIN_LED_BACKEND, connected ? HIGH : LOW);
 }
 
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-float readEchoDistance(uint8_t trigPin, uint8_t echoPin, bool &valid,
-                       float defaultDistance) {
-  // Ping ba lan. Can it nhat hai Echo hop le de tranh bao OK do xung nhieu.
-  const int attempts = 3;
-  float distanceTotal = 0.0f;
-  int validCount = 0;
-  for (int attempt = 0; attempt < attempts; attempt++) {
-    digitalWrite(trigPin, LOW);
-    delayMicroseconds(3);
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
-
-    unsigned long duration = pulseIn(echoPin, HIGH, 30000);
-    float distance = duration * 0.0343f / 2.0f;
-    if (duration > 0 && distance >= 2.0f && distance <= 400.0f) {
-      distanceTotal += distance;
-      validCount++;
-    }
-    // HC-SR04 can khoang cach giua hai lan phat de tranh Echo cheo.
-    delay(60);
-  }
-  valid = validCount >= 2;
-  return valid ? distanceTotal / validCount : defaultDistance;
-}
-
-float readRainRateMMH(bool &rainSensorValid) {
-  // Ưu tiên đọc Cảm biến Siêu âm 2 (mô phỏng mực nước ống hứng mưa)
-  bool ultrasonicRainValid = false;
-  float dist = readEchoDistance(PIN_TRIG_RAIN, PIN_ECHO_RAIN,
-                                ultrasonicRainValid, RAIN_GAUGE_HEIGHT_CM);
-  if (ultrasonicRainValid) {
-    rainSensorValid = true;
-    rainSensorVerified = true;
-    rainSensorMode = "hc_sr04_echo_ok";
-    // Khoảng cách 30cm -> 0 mm/h (ống cạn, không mưa); Khoảng cách 5cm -> 100
-    // mm/h (mưa rất to)
-    float rainHeight = max(0.0f, RAIN_GAUGE_HEIGHT_CM - dist);
-    return rainHeight * 4.0f; // 25cm nước dâng = 100 mm/h
-  }
-
-  // Fallback sang biến trở analog nếu cảm biến siêu âm 2 không có tín hiệu
-  int raw = analogRead(PIN_RAIN_POT);
-  rainSensorValid = true;
-  // analogRead() vẫn trả số khi chân bị thả nổi, nên không thể dùng nó để xác
-  // nhận cảm biến thật đang kết nối. Giá trị vẫn được gửi để tương thích mô
-  // phỏng, nhưng health/quality phải báo chưa được xác minh.
-  rainSensorVerified = false;
-  rainSensorMode = "analog_fallback_unverified";
-  return raw * 120.0f / 4095.0f;
-}
-#else
 uint16_t modbusCrc16(const uint8_t *data, size_t length) {
   uint16_t crc = 0xFFFF;
   for (size_t index = 0; index < length; index++) {
@@ -744,21 +633,16 @@ float readRainRateMMH(bool &rainSensorValid, float intervalHours) {
   rainSensorMode = "modbus_crc_ok";
   return rateMMH;
 }
-#endif
 
 String buildQualityFlags(bool waterValid) {
   String flags = "[";
   bool hasFlag = false;
   if (!waterValid) {
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 #if MINI_FLOOD_WATER_SENSOR_HCSR04
     flags += "\"water_sensor_invalid\"";
 #else
     flags += MINI_FLOOD_WATER_CALIBRATED ? "\"water_sensor_invalid\"" :
                                            "\"water_not_calibrated\"";
-#endif
-#else
-    flags += "\"water_sensor_timeout\"";
 #endif
     hasFlag = true;
   }
@@ -814,16 +698,12 @@ bool postRecord(const TelemetryRecord &record) {
     return false;
   }
 
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
   if (activeApiUrl.length() == 0 && !discoverBackend()) {
     setBackendLed(false);
     Serial.println("[HTTP] Chua tim thay backend qua mDNS");
     return false;
   }
   String targetUrl = activeApiUrl;
-#else
-  String targetUrl = API_URL;
-#endif
   String payload = toJson(record);
   HTTPClient http;
   http.setTimeout(5000);
@@ -843,11 +723,9 @@ bool postRecord(const TelemetryRecord &record) {
   if (status < 0) {
     Serial.printf("[HTTP] Loi ket noi %d: %s\n", status,
                   HTTPClient::errorToString(status).c_str());
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
     // IP laptop co the da doi. Xoa URL dang dung de lan gui sau tu tim lai.
     activeApiUrl = "";
     lastBackendDiscoveryAt = 0;
-#endif
   } else {
     Serial.printf("[HTTP] Phan hoi %d: %s\n", status, response.c_str());
   }
@@ -907,9 +785,7 @@ void ensureWiFi() {
                   WiFi.localIP().toString().c_str());
     Serial.printf("[HEALTH] Mo tren trinh duyet: http://%s/health\n",
                   WiFi.localIP().toString().c_str());
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
     discoverBackend(true);
-#endif
   } else {
     Serial.printf("\n[WiFi] That bai, status=%d; se thu lai\n", WiFi.status());
   }
@@ -936,19 +812,8 @@ void setup() {
            (unsigned long)esp_random(), (unsigned long)esp_random());
   bootId = String(bootIdBuffer);
   Serial.printf("[BOOT] Session: %s\n", bootId.c_str());
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
   Serial.printf("[BOOT] Backend discovery: %s.local:%u\n", BACKEND_MDNS_HOST,
                 BACKEND_MDNS_PORT);
-#else
-  Serial.printf("[BOOT] API: %s\n", API_URL);
-#endif
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-  pinMode(PIN_TRIG_WATER, OUTPUT);
-  pinMode(PIN_ECHO_WATER, INPUT);
-  pinMode(PIN_TRIG_RAIN, OUTPUT);
-  pinMode(PIN_ECHO_RAIN, INPUT);
-  pinMode(PIN_RAIN_POT, INPUT);
-#else
 #if MINI_FLOOD_WATER_SENSOR_HCSR04
   pinMode(PIN_TRIG_WATER, OUTPUT);
   pinMode(PIN_ECHO_WATER, INPUT);
@@ -973,7 +838,6 @@ void setup() {
   Serial.printf("[BOOT] RS485 default baud=%lu slave=%u auto_discovery=%s\n",
                 static_cast<unsigned long>(activeRainBaud), activeRainSlaveId,
                 MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED ? "yes" : "no");
-#endif
   preferences.begin("mini-flood", false);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -1002,30 +866,18 @@ void loop() {
     lastMeasureAt = millis();
 
     bool waterValid = false;
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-    // Profile Wokwi: cam bien sieu am 1 do muc nuoc.
-    float waterDistCM = readEchoDistance(PIN_TRIG_WATER, PIN_ECHO_WATER,
-                                         waterValid, SENSOR_MOUNT_HEIGHT_CM);
-    float waterLevelCM = max(0.0f, SENSOR_MOUNT_HEIGHT_CM - waterDistCM);
-#else
-    // Profile that: HC-SR04 do khoang cach tu dau do den mat nuoc.
+    // HC-SR04 do khoang cach tu dau do den mat nuoc.
 #if MINI_FLOOD_WATER_SENSOR_HCSR04
     float waterLevelCM = readRealWaterDistance(waterValid);
 #else
     float waterLevelCM = readWaterLevelCM(waterValid);
 #endif
-#endif
     waterSensorConnected = waterValid;
 
     float intervalHours = elapsedMs / 3600000.0f;
     bool rainValid = false;
-#if defined(MINI_FLOOD_PROFILE_SIMULATION)
-    // Profile Wokwi: HC-SR04 thu hai hoac bien tro.
-    float rainRateMMH = readRainRateMMH(rainValid);
-#else
-    // Profile that: truy van cam bien mua Modbus qua UART2.
+    // Truy van cam bien mua Modbus qua UART2.
     float rainRateMMH = readRainRateMMH(rainValid, intervalHours);
-#endif
 
     unsigned long sequenceNo = preferences.getULong("sequence", 0) + 1;
     preferences.putULong("sequence", sequenceNo);
@@ -1041,14 +893,12 @@ void loop() {
     Serial.printf(
         "[SENSOR] profile=%s seq=%lu water=%.2fcm rain=%.2fmm/h queue=%d",
         HARDWARE_PROFILE, sequenceNo, waterLevelCM, rainRateMMH, queueCount);
-#if defined(MINI_FLOOD_PROFILE_REAL_HARDWARE)
 #if MINI_FLOOD_WATER_SENSOR_HCSR04
     Serial.printf(" distance=%.2fcm rain_mode=%s", lastWaterDistanceCM,
                   rainSensorMode.c_str());
 #else
     Serial.printf(" adc=%d rain_mode=%s", lastWaterAdcRaw,
                   rainSensorMode.c_str());
-#endif
 #endif
     Serial.println();
     printHealth();

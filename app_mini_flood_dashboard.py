@@ -102,7 +102,7 @@ rows = (history_payload or {}).get("items", [])
 if latest is None:
     st.info(
         "Backend đang hoạt động nhưng chưa có telemetry cho thiết bị này. "
-        "Hãy kiểm tra Serial Monitor của ESP32/Wokwi."
+        "Hãy kiểm tra Serial Monitor của ESP32."
     )
     st.stop()
 

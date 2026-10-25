@@ -70,7 +70,7 @@ flowchart LR
 | Thành phần | Trách nhiệm |
 |---|---|
 | Cảm biến mực nước | Đo khoảng cách từ đầu dò xuống mặt nước; firmware đổi thành `water_level_cm = SENSOR_MOUNT_HEIGHT_CM - distance_cm`. |
-| Cảm biến mưa | Trong Wokwi, HC-SR04 thứ hai hoặc biến trở mô phỏng `rain_rate_mmh`; ngoài thực tế có thể thay bằng cảm biến mưa phù hợp. |
+| Cảm biến mưa | Cảm biến mưa RS485 Modbus cung cấp tổng lượng mưa; firmware tính `rain_rate_mmh` từ chênh lệch giữa hai lần đọc. |
 | ESP32 firmware | Lấy mẫu, tạo `boot_id` cho mỗi lần khởi động, tăng `sequence_no`, đệm tối đa 100 gói khi mất mạng và gửi HTTP. |
 | FastAPI | Xác thực thiết bị, kiểm tra schema, tiếp nhận telemetry và cung cấp API V2/SSE/WebSocket. |
 | Feature engine | Tạo bốn đặc trưng: mưa hiện tại, mưa tích lũy 5 phút, mực nước hiện tại và độ dâng nước 2 phút. |
@@ -139,7 +139,7 @@ Ví dụ payload:
 }
 ```
 
-`boot_id` giải quyết trường hợp Wokwi hoặc ESP32 khởi động lại làm `sequence_no` quay về 1. Việc gửi lại đúng cùng gói trong cùng phiên vẫn trả `duplicate=true`, còn gói số 1 của phiên mới vẫn được lưu.
+`boot_id` giải quyết trường hợp ESP32 khởi động lại làm `sequence_no` quay về 1. Việc gửi lại đúng cùng gói trong cùng phiên vẫn trả `duplicate=true`, còn gói số 1 của phiên mới vẫn được lưu.
 
 ## 6. Pipeline dự báo
 
@@ -223,7 +223,7 @@ API thiết bị và API cấu hình được bảo vệ bằng header `X-Device
 ## 11. Cấu trúc mã nguồn
 
 ```text
-EPS32_PROJECT/src/main.cpp                  ESP32/Wokwi firmware
+EPS32_PROJECT/src/main.cpp                  ESP32 firmware cho thiết bị thật
 mini_flood_api.py                           FastAPI routes
 mini_flood/service.py                      Telemetry orchestration
 mini_flood/db.py                           SQLite schema and repository

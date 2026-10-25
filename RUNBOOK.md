@@ -34,8 +34,7 @@ mini-flood-backend.local
 
 Sau khi kết nối Wi-Fi, ESP32 tìm service này, lấy IP/port hiện tại của laptop và
 lưu URL gần nhất trong `Preferences`. Nếu laptop đổi IP và HTTP lỗi, ESP32 xóa
-URL đang dùng rồi tự tìm lại qua mDNS. Profile `simulation` vẫn sử dụng
-`host.wokwi.internal` và không phụ thuộc mDNS.
+URL đang dùng rồi tự tìm lại qua mDNS.
 
 ### 2.2. Thiết lập một lần trên mỗi máy Windows
 
@@ -185,7 +184,6 @@ Khởi động lại API sau khi huấn luyện để nạp model mới.
 ```powershell
 pytest -q
 python simulate_iot_stream.py --scenario flow --speedup 0
-pio run --project-dir EPS32_PROJECT -e simulation
 pio run --project-dir EPS32_PROJECT -e real_hardware
 ```
 

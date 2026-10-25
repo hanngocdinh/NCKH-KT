@@ -65,4 +65,4 @@ pytest -q
 
 Model chưa đạt MAE tốt hơn baseline sẽ không được sử dụng. Xem [RUNBOOK.md](RUNBOOK.md) và [hướng dẫn HTTP V2](docs/MINI_FLOOD_HTTP_GUIDE.md) để vận hành hệ thống.
 
-Xem [kiến trúc hệ thống](docs/ARCHITECTURE.md) để hiểu luồng ESP32/Wokwi, API, dự báo, ngưỡng động, chống trùng bằng `boot_id` và kênh cảnh báo.
+Xem [kiến trúc hệ thống](docs/ARCHITECTURE.md) để hiểu luồng ESP32, API, dự báo, ngưỡng động, chống trùng bằng `boot_id` và kênh cảnh báo.
