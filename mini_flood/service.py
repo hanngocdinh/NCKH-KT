@@ -5,7 +5,7 @@ from typing import Any
 
 from .broadcaster import broadcaster
 from .config import MiniFloodSettings
-from .db import MiniFloodDatabase
+from .db import MiniFloodDatabase, utc_now
 from .features import build_features, identify_main_factor
 from .models import ALERT_LABELS, MiniFloodModelRegistry
 from .notifications import AlertManager, DeliveryWorker
@@ -53,6 +53,9 @@ class MiniFloodService:
             )
         item = payload.model_dump(mode="json")
         timestamp = payload.timestamp
+        if timestamp.year < 2020:
+            timestamp = utc_now()
+            item["timestamp"] = timestamp.isoformat()
         quality_flags = list(payload.quality_flags)
         quality_flags.extend(flag for flag in self._timestamp_quality(timestamp) if flag not in quality_flags)
         item["quality_flags"] = quality_flags
