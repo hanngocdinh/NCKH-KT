@@ -355,13 +355,13 @@ water_rise_2m_cm
 
 ```text
 forecast_15m_cm
-forecast_30m_cm
+inference.forecasts (5/10/15 phút + upper_p90_cm)
 ```
 
 AI không tự quyết định An toàn/Cảnh báo/Nguy hiểm. Backend lấy giá trị lớn nhất trong mực nước hiện tại và hai dự báo:
 
 ```text
-effective_level = max(water_level_cm, forecast_15m_cm, forecast_30m_cm)
+effective_level = max(water_level_cm, upper_p90_5m, upper_p90_10m, upper_p90_15m)
 ```
 
 Sau đó so sánh với cấu hình trạm. Với cấu hình mặc định:

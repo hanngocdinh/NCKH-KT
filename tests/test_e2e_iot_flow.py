@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+from conftest import make_bundle
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,7 @@ from mini_flood_api import create_app
 
 
 def build_test_client(tmp_path: Path):
+    make_bundle(tmp_path / "models")
     db_path = tmp_path / "e2e_mini.sqlite3"
     settings = MiniFloodSettings(
         database_path=db_path,
@@ -51,12 +54,13 @@ def test_scenario_normal(tmp_path):
     for i in range(20):
         t = end - timedelta(minutes=19 - i)
         payload = make_payload(seq=i + 1, stamp=t, water=8.0, rain=2.0)
-        res = client.post("/api/v2/telemetry", json=payload, headers=headers)
+        with patch("mini_flood.service.utc_now", return_value=t):
+            res = client.post("/api/v2/telemetry", json=payload, headers=headers)
         assert res.status_code == 200
         responses.append(res.json())
 
     # Các bản ghi đầu đang thu thập lịch sử hoặc có cờ stale do thời gian quá khứ
-    assert responses[0]["quality_status"] in {"unknown", "warming_up"}
+    assert responses[0]["quality_status"] in {"stale", "valid"}
     assert "predictions" not in responses[0]
 
     # Bản ghi cuối (thời điểm hiện tại) có dữ liệu hợp lệ và AI dự báo Mức 0
@@ -95,7 +99,8 @@ def test_scenario_warning(tmp_path):
             water = 10.0 + (i - 10) * 1.0  # lên đến 19.0 cm
             rain = 45.0
         payload = make_payload(seq=i + 1, stamp=t, water=water, rain=rain)
-        res = client.post("/api/v2/telemetry", json=payload, headers=headers)
+        with patch("mini_flood.service.utc_now", return_value=t):
+            res = client.post("/api/v2/telemetry", json=payload, headers=headers)
         assert res.status_code == 200
         responses.append(res.json())
 
@@ -149,7 +154,8 @@ def test_scenario_danger(tmp_path):
     assert latest is not None
     assert latest["safety_override"] == 1
     assert latest["alert_level"] == 2
-    assert "vượt ngưỡng nguy hiểm" in latest["main_factor"]
+    assert "vượt mức tràn" in latest["main_factor"]
+    assert latest["alert_source"] == "sensor_rule"
 
     # Kiểm tra database: AlertManager phải enqueue ngay một sự kiện escalation Mức 2
     with db.connect() as conn:

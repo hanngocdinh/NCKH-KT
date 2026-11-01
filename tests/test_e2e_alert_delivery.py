@@ -14,9 +14,9 @@ STATION = {
 }
 DUMMY_FEATURES = {
     "rain_rate_mmh": 50.0,
-    "rain_sum_5m": 12.0,
+    "rain_sum_window_mm": 12.0,
     "water_level_cm": 28.0,
-    "water_rise_2m_cm": 5.0,
+    "water_delta_window_cm": 5.0,
 }
 
 

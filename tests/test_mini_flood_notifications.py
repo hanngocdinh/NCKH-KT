@@ -12,9 +12,9 @@ STATION = {
 }
 FEATURES = {
     "rain_rate_mmh": 40,
-    "rain_sum_5m": 9,
+    "rain_sum_window_mm": 9,
     "water_level_cm": 20,
-    "water_rise_2m_cm": 3,
+    "water_delta_window_cm": 3,
 }
 
 
@@ -25,7 +25,7 @@ def evaluate(manager, timestamp, level_cm, features=None):
         None,
         "device",
         timestamp,
-        {15: level_cm, 30: level_cm},
+        {900: level_cm, 1800: level_cm},
         current,
         STATION,
         "test",

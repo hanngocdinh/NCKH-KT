@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
+from .notification_settings import load_notification_config
 
 
 class TelemetryBroadcaster:
@@ -10,45 +12,44 @@ class TelemetryBroadcaster:
     Hỗ trợ phát đa kênh tới các client SSE (Server-Sent Events) và WebSocket.
     """
 
-    def __init__(self) -> None:
-        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
-        self._lock: asyncio.Lock | None = None
-
-    def _get_lock(self) -> asyncio.Lock:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
+    def __init__(self, queue_size: int | None = None) -> None:
+        self._subscribers: dict[asyncio.Queue, asyncio.AbstractEventLoop] = {}
+        self._lock = threading.RLock()
+        self.queue_size = queue_size or load_notification_config().stream_queue_size
 
     async def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
-        async with self._get_lock():
-            self._subscribers.add(queue)
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self.queue_size)
+        with self._lock:
+            self._subscribers[queue] = asyncio.get_running_loop()
         return queue
 
     async def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        async with self._get_lock():
-            self._subscribers.discard(queue)
+        with self._lock:
+            self._subscribers.pop(queue, None)
+
+    @staticmethod
+    def _put(queue, event):
+        if queue.full():
+            queue.get_nowait()
+            event = {**event, "resync_required": True}
+        queue.put_nowait(event)
 
     def publish_sync(self, event: dict[str, Any]) -> None:
         """Phát sự kiện từ hàm đồng bộ (như service.ingest)."""
-        for q in list(self._subscribers):
+        with self._lock:
+            subscribers = list(self._subscribers.items())
+        for q, loop in subscribers:
             try:
-                q.put_nowait(event)
-            except asyncio.QueueFull:
-                pass
+                loop.call_soon_threadsafe(self._put, q, event)
+            except RuntimeError:
+                with self._lock:
+                    self._subscribers.pop(q, None)
 
     async def publish(self, event: dict[str, Any]) -> None:
         """Phát sự kiện từ coroutine bất đồng bộ."""
-        async with self._get_lock():
-            for q in list(self._subscribers):
-                try:
-                    q.put_nowait(event)
-                except asyncio.QueueFull:
-                    pass
+        self.publish_sync(event)
 
     @property
     def subscriber_count(self) -> int:
-        return len(self._subscribers)
-
-
-broadcaster = TelemetryBroadcaster()
+        with self._lock:
+            return len(self._subscribers)

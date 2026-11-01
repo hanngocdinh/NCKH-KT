@@ -1,12 +1,15 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from mini_flood.config import MiniFloodSettings
 from mini_flood_api import create_app
+from conftest import make_bundle
 
 
 def make_client(tmp_path):
+    make_bundle(tmp_path / "models")
     settings = MiniFloodSettings(
         database_path=tmp_path / "mini.sqlite3",
         model_dir=tmp_path / "models",
@@ -50,18 +53,20 @@ def test_api_warms_up_then_predicts_and_deduplicates(tmp_path):
         for sequence in range(17):
             stamp = end - timedelta(minutes=16 - sequence)
             body = payload(sequence, stamp, water=8 + sequence * 0.4, rain=20)
-            response = client.post("/api/v2/telemetry", json=body, headers=headers)
+            with patch("mini_flood.service.utc_now", return_value=stamp):
+                response = client.post("/api/v2/telemetry", json=body, headers=headers)
             assert response.status_code == 200
             first = first or response.json()
             final = response.json()
-        assert first["quality_status"] in {"unknown", "warming_up"}
+        assert first["quality_status"] in {"stale", "valid"}
         assert final["quality_status"] == "valid"
         assert "predictions" not in final
         latest = client.get(
             "/api/v2/stations/mini-flood-station-01/latest", headers=headers
         ).json()
         assert latest["forecast_15m_cm"] is not None
-        assert latest["forecast_30m_cm"] is not None
+        assert latest["forecast_30m_cm"] is None
+        assert {item["horizon_minutes"] for item in latest["inference"]["forecasts"]} == {5, 10, 15}
         duplicate = client.post("/api/v2/telemetry", json=body, headers=headers).json()
         assert duplicate["duplicate"] is True
         assert "predictions" not in duplicate
@@ -130,7 +135,7 @@ def test_api_validation_and_health(tmp_path):
         ).status_code == 422
         health = client.get("/api/v2/health")
         assert health.status_code == 200
-        assert health.json()["simulation"] is True
+        assert health.json()["simulation"] is False
 
 
 def test_experiment_is_attached_and_exported(tmp_path):
@@ -206,7 +211,7 @@ def test_station_config_is_dynamic_and_validated(tmp_path):
         latest = client.get(
             "/api/v2/stations/mini-flood-station-01/latest", headers=headers
         ).json()
-        assert latest["alert_level"] == 0
+        assert latest["alert_level"] is None
 
         client.put(
             url,
@@ -221,9 +226,10 @@ def test_station_config_is_dynamic_and_validated(tmp_path):
         client.post(
             "/api/v2/telemetry",
             headers=headers,
-            json=payload(101, datetime.now(timezone.utc), water=35),
+            json=payload(101, datetime.now(timezone.utc), water=42),
         )
         latest = client.get(
             "/api/v2/stations/mini-flood-station-01/latest", headers=headers
         ).json()
-        assert latest["alert_level"] == 1
+        assert latest["alert_level"] == 2
+        assert latest["alert_source"] == "sensor_rule"

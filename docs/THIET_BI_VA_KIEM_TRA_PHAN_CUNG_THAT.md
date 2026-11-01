@@ -35,7 +35,7 @@ UART0 qua USB dùng để nạp chương trình và xem log. UART phụ dùng `G
 1. Cắm USB dữ liệu vào máy tính.
 2. Cổng COM mới phải xuất hiện.
 3. Mở Serial Monitor ở `115200` baud.
-4. Nhấn EN/RESET; phải thấy dòng `[BOOT] Mini Flood firmware V2`.
+4. Nhấn EN/RESET; phải thấy dòng `[BOOT] Mini Flood firmware V3`.
 5. Sau khi vào Wi-Fi phải thấy IP và có thể mở `http://<IP-ESP32>/health`.
 
 Số cổng COM có thể thay đổi khi đổi cổng USB hoặc máy tính. Chọn đúng cổng vừa xuất hiện khi cắm ESP32; không cố định `COM6` trong cấu hình dùng chung.

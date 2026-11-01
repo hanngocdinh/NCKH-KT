@@ -78,7 +78,7 @@ def test_buffered_payloads_accepted(tmp_path):
 def test_stale_timestamp_flagged(tmp_path):
     """Kiểm tra xử lý bản ghi đến quá muộn (stale timestamp > 10 phút):
     - Server vẫn lưu trữ bản ghi vào DB để phục vụ kiểm tra/lịch sử.
-    - Đánh dấu quality_flags chứa 'stale_timestamp', quality_status='unknown'.
+    - Đánh dấu quality_flags chứa 'stale_timestamp', quality_status='stale'.
     - Không chạy dự báo AI với bản ghi bị trễ này.
     """
     client, db = build_test_client(tmp_path)
@@ -92,7 +92,7 @@ def test_stale_timestamp_flagged(tmp_path):
 
     data = res.json()
     assert data["accepted"] is True
-    assert data["quality_status"] == "unknown"
+    assert data["quality_status"] == "stale"
     assert "predictions" not in data
 
     # Kiểm tra bản ghi lưu trong database có flag stale_timestamp
@@ -101,6 +101,6 @@ def test_stale_timestamp_flagged(tmp_path):
             "SELECT quality_flags, quality_status FROM telemetry WHERE sequence_no = 99"
         ).fetchone()
         assert row is not None
-        assert row["quality_status"] == "unknown"
+        assert row["quality_status"] == "stale"
         assert "stale_timestamp" in row["quality_flags"]
 

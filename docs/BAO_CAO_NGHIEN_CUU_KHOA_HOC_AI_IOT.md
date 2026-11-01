@@ -9,7 +9,7 @@
 Mục tiêu kỹ thuật:
 
 - Đo mực nước và cường độ mưa theo chu kỳ.
-- Dự báo mực nước sau 15 và 30 phút theo đơn vị centimet.
+- Dự báo mực nước sau các horizon trong cấu hình (mặc định 5/10/15 phút), chỉ dùng learned model.
 - Tách kết quả AI khỏi ngưỡng cảnh báo của từng vị trí lắp đặt.
 - Cảnh báo sớm trước khi nước chạm mức tràn của sa bàn.
 
@@ -17,7 +17,7 @@ Mục tiêu kỹ thuật:
 
 ESP32 gửi các trường `rain_interval_mm`, `rain_rate_mmh` và `water_level_cm` tới API `/api/v2/telemetry`. `water_level_cm` được tính từ đáy bể; khoảng cách lắp cảm biến chỉ phục vụ phép quy đổi tại firmware.
 
-Backend tạo bốn đặc trưng:
+Backend tạo bốn đặc trưng tương thích chu kỳ IoT 60 giây:
 
 | Đặc trưng | Ý nghĩa |
 |---|---|
@@ -30,26 +30,19 @@ Dữ liệu được tách train/test theo lần thí nghiệm và thứ tự th
 
 ## 3. Mô hình dự báo
 
-Đầu ra học máy là hai giá trị liên tục:
+Đầu ra học máy là mực nước liên tục theo từng horizon; model thiếu/lỗi trả null:
 
 \[
-\hat{H}_{15},\quad \hat{H}_{30}\quad (cm)
+\hat{H}_{5},\quad \hat{H}_{10},\quad \hat{H}_{15}\quad (cm)
 \]
 
 Với mỗi horizon, hệ thống so sánh:
 
-1. Baseline chiếu tuyến tính từ tốc độ dâng gần nhất.
+1. Persistence và chiếu tuyến tính chỉ dùng làm mốc so sánh offline.
 2. Ridge Regression có chuẩn hóa đặc trưng.
 3. Random Forest Regressor nông với độ sâu tối đa 4.
 
-Các mô hình được đánh giá bằng MAE, RMSE và R². Learned model chỉ được chọn khi MAE thấp hơn baseline trên tập kiểm thử độc lập.
-
-Kết quả trên bộ dữ liệu synthetic hiện tại:
-
-| Horizon | Model được chọn | MAE model | MAE baseline |
-|---|---:|---:|---:|
-| 15 phút | Ridge | 0,562 cm | 1,453 cm |
-| 30 phút | Random Forest | 0,906 cm | 2,757 cm |
+Các mô hình được đánh giá bằng MAE, RMSE và R². Tham số nghiệm thu đọc từ config/ai.json; chỉ dữ liệu thật mới được xét promote. Synthetic chỉ kiểm tra pipeline. P90/OOD/Gradient Boosting và water-only model tạm hoãn để giữ đơn giản.
 
 ## 4. Ngưỡng động theo vị trí
 
@@ -66,7 +59,7 @@ Ngưỡng cảnh báo được tính bằng:
 H_{warning}=H_{overflow}-warning\_margin
 \]
 
-Backend so sánh giá trị lớn nhất trong mực nước hiện tại, dự báo 15 phút và dự báo 30 phút với hai ngưỡng. Trạng thái tăng ngay khi vượt ngưỡng nhưng chỉ hạ từng mức sau khi nằm dưới ngưỡng trừ hysteresis đủ thời gian quy định.
+Forecast từ model quyết định cảnh báo sớm. Quy tắc sensor_rule riêng nâng nguy hiểm khi nước thực tế mới, hợp lệ vượt mức tràn. Hysteresis được giữ; thiếu model không tự hạ mức hoặc kết luận An toàn. Mỗi quyết định có trace dữ liệu, config và model để debug.
 
 Cấu hình mặc định của sa bàn là mức tràn 40 cm, vùng đệm 10 cm, hysteresis 2 cm và thời gian ổn định 120 giây. Các giá trị này được chỉnh trực tiếp trên dashboard mà không phải sửa mã nguồn hoặc huấn luyện lại AI.
 
@@ -91,7 +84,7 @@ Pipeline được kiểm thử ở các mức:
 - End-to-end test cho các kịch bản an toàn, cảnh báo, nguy hiểm, mất mạng và hồi phục.
 - Build firmware bằng PlatformIO.
 
-Kết quả nghiệm thu hiện tại: 27 kiểm thử Python thành công, firmware ESP32 build thành công và luồng simulator tới API V2 hoạt động đầy đủ.
+Kết quả nghiệm thu phải được lấy từ lần chạy `pytest` và PlatformIO gần nhất; không dùng số kiểm thử tĩnh trong báo cáo. Model chỉ được công bố sau khi metadata ghi `promoted=true`.
 
 ## 7. Giới hạn và hướng phát triển
 

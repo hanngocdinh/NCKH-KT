@@ -1,4 +1,4 @@
-"""Pipeline dự báo ngập 15/30 phút cho mô hình vật lý thu nhỏ."""
+"""Model-only water-level forecasting with configurable time windows and horizons."""
 
 from .config import MiniFloodSettings
 from .service import MiniFloodService

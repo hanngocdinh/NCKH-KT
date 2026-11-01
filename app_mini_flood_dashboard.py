@@ -14,13 +14,15 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
+from mini_flood.notifications import format_horizon
 
 from mini_flood.config import MiniFloodSettings
 from mini_flood.models import ALERT_LABELS
+from mini_flood.features import sensor_validity
 
 
-st.set_page_config(page_title="Mô phỏng dự báo ngập", page_icon="🌧️", layout="wide")
+APP_TITLE = "Giám sát và cảnh báo mực nước"
+st.set_page_config(page_title=APP_TITLE, page_icon="🌊", layout="wide")
 settings = MiniFloodSettings.from_env()
 api_base = os.getenv("MINI_FLOOD_API_BASE", "http://localhost:8000/api/v2").rstrip("/")
 api_headers = {"X-Device-Key": settings.device_api_key}
@@ -36,13 +38,13 @@ def api_get(path: str) -> tuple[dict | None, str | None]:
     except requests.RequestException as exc:
         return None, str(exc)
 
-st.title("🌧️ [MÔ PHỎNG THỬ NGHIỆM] Dự báo nguy cơ ngập")
-st.caption("Prototype AI + IoT trên mô hình vật lý thu nhỏ — không phải cảnh báo vận hành cho Hội An.")
+st.title(f"🌊 {APP_TITLE}")
+st.caption("Theo dõi mưa, mực nước và dự báo nguy cơ ngập theo thời gian thực.")
 
-device_id = st.sidebar.text_input("Mã thiết bị", "mini-flood-station-01")
+device_id = st.sidebar.text_input("Mã thiết bị", settings.default_device_id)
 history_limit = st.sidebar.slider("Số bản ghi hiển thị", 30, 1000, 240, 10)
 auto_refresh = st.sidebar.checkbox("Tự động làm mới", value=True)
-refresh_interval = st.sidebar.selectbox("Chu kỳ làm mới", [5, 10, 30], index=0, format_func=lambda x: f"{x} giây")
+refresh_interval = st.sidebar.number_input("Chu kỳ làm mới (giây)", min_value=0.1, value=float(settings.notifications.dashboard_refresh_seconds))
 if st.sidebar.button("Làm mới ngay"):
     st.rerun()
 
@@ -88,7 +90,14 @@ with st.sidebar.expander("Cấu hình ngưỡng động", expanded=False):
                 except requests.RequestException as exc:
                     st.error(f"Không thể cập nhật qua API: {exc}")
 
-latest, latest_error = api_get(f"/stations/{encoded_device_id}/latest")
+snapshot, snapshot_error = api_get(f"/stations/{encoded_device_id}/snapshot")
+latest = ((snapshot or {}).get("current_inference") or (snapshot or {}).get("last_received"))
+latest_error = snapshot_error
+last_received = (snapshot or {}).get("last_received") or {}
+if last_received and (not last_received.get("is_live") or last_received.get("quality_status") != "valid"):
+    st.error(f"Gói vừa nhận không đủ chất lượng: {last_received.get('quality_flags')}")
+if latest and latest.get("stale"):
+    st.error(f"Kết quả đã cũ: {latest.get('age_seconds', 0):.1f} giây; chờ dữ liệu mới")
 history_payload, history_error = api_get(
     f"/stations/{encoded_device_id}/history?limit={history_limit}"
 )
@@ -102,112 +111,77 @@ rows = (history_payload or {}).get("items", [])
 if latest is None:
     st.info(
         "Backend đang hoạt động nhưng chưa có telemetry cho thiết bị này. "
-        "Hãy kiểm tra Serial Monitor của ESP32."
+        "Gửi telemetry vào API từ IoT hoặc công cụ HTTP để bắt đầu."
     )
+    if auto_refresh:
+        time.sleep(refresh_interval)
+        st.rerun()
     st.stop()
 
-forecast_15 = latest.get("forecast_15m_cm")
-forecast_30 = latest.get("forecast_30m_cm")
+inference = latest.get("inference") or {}
+forecast_items = {
+    int(item["horizon_seconds"] if item.get("horizon_seconds") is not None else item["horizon_minutes"] * 60): item for item in inference.get("forecasts", [])
+}
 
 
-init_water = f"{latest['water_level_cm']:.1f} cm"
-init_rain = f"{latest['rain_rate_mmh']:.1f} mm/h"
-init_seq = f"#{latest.get('sequence_no', '-')}"
-
-html_stream_widget = """
-<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f8fafc;">
-  <div style="display: flex; justify-content: space-between; align-items: center;">
-    <div style="display: flex; align-items: center;">
-      <span id="dot" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #10b981; margin-right: 8px;"></span>
-      <span style="font-weight: 600; font-size: 14px; color: #38bdf8;">Lắng nghe dữ liệu thời gian thực (Live SSE Stream):</span>
-      <span id="status" style="margin-left: 8px; font-size: 13px; color: #94a3b8;">Đang kết nối...</span>
-    </div>
-    <div id="recv-time" style="font-size: 12px; color: #94a3b8;">Chờ bản ghi mới...</div>
-  </div>
-  <div style="display: flex; gap: 24px; margin-top: 8px; font-size: 13px;">
-    <div>🌊 Mực nước tức thời: <strong id="val-water" style="color: #67e8f9;">__INIT_WATER__</strong></div>
-    <div>🌧️ Cường độ mưa tức thời: <strong id="val-rain" style="color: #67e8f9;">__INIT_RAIN__</strong></div>
-    <div>⏱️ Gói đo gần nhất: <strong id="val-seq" style="color: #cbd5e1;">__INIT_SEQ__</strong></div>
-  </div>
-</div>
-<script>
-  const source = new EventSource("__SSE_URL__");
-  const dot = document.getElementById("dot");
-  const statusEl = document.getElementById("status");
-  const timeEl = document.getElementById("recv-time");
-  const waterEl = document.getElementById("val-water");
-  const rainEl = document.getElementById("val-rain");
-  const seqEl = document.getElementById("val-seq");
-
-  source.onopen = function() {
-    statusEl.innerText = "Đã kết nối trực tiếp (Live)";
-    statusEl.style.color = "#34d399";
-  };
-  source.addEventListener("telemetry", function(e) {
-    try {
-      const item = JSON.parse(e.data);
-      waterEl.innerText = Number(item.water_level_cm).toFixed(1) + " cm";
-      rainEl.innerText = Number(item.rain_rate_mmh).toFixed(1) + " mm/h";
-      seqEl.innerText = "#" + item.sequence_no;
-      timeEl.innerText = "Nhận lúc: " + new Date().toLocaleTimeString();
-      dot.style.background = "#38bdf8";
-      setTimeout(function() { dot.style.background = "#10b981"; }, 300);
-    } catch(err) {}
-  });
-  source.onerror = function() {
-    statusEl.innerText = "Chờ máy chủ / Đang kết nối lại...";
-    statusEl.style.color = "#f87171";
-    dot.style.background = "#ef4444";
-  };
-</script>
-"""
-sse_url = f"{api_base}/stream/sse?device_id={encoded_device_id}"
-html_stream_widget = (
-    html_stream_widget
-    .replace("__INIT_WATER__", init_water)
-    .replace("__INIT_RAIN__", init_rain)
-    .replace("__INIT_SEQ__", init_seq)
-    .replace("__SSE_URL__", sse_url)
-)
-
-components.html(html_stream_widget, height=88)
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Mực nước", f"{latest['water_level_cm']:.1f} cm")
-c2.metric("Cường độ mưa", f"{latest['rain_rate_mmh']:.1f} mm/h")
-c3.metric("Dự báo 15 phút", "Đang khởi động" if forecast_15 is None else f"{forecast_15:.1f} cm")
-c4.metric("Dự báo 30 phút", "Đang khởi động" if forecast_30 is None else f"{forecast_30:.1f} cm")
+c1, c2 = st.columns(2)
+measurement = (snapshot or {}).get("current_measurement")
+c1.metric("Mực nước hợp lệ gần nhất", f"{measurement['water_level_cm']:.1f} cm" if measurement else "Chưa có")
+if measurement:
+    c1.caption(f"Tuổi số đo: {measurement.get('age_seconds', 0):.1f} giây")
+c2.metric("Cường độ mưa", f"{latest['rain_rate_mmh']:.1f} mm/h" if latest.get("rain_valid") else "Không có số đo hợp lệ")
+forecast_columns = st.columns(len(forecast_items)) if forecast_items else []
+for column, horizon in zip(forecast_columns, sorted(forecast_items)):
+    item = forecast_items.get(horizon, {})
+    point = item.get("level_cm")
+    value = "Chưa có dự báo" if point is None else f"{point:.1f} cm"
+    column.metric(f"Dự báo {format_horizon(horizon)}", value)
+    column.caption(f"{item.get('algorithm') or '-'} · {item.get('status') or ''} · {item.get('error') or ''}")
 alert_level = latest.get("alert_level")
-st.subheader(f"Trạng thái: {ALERT_LABELS.get(alert_level, 'Đang khởi động')}")
+st.subheader(f"Trạng thái: {ALERT_LABELS.get(alert_level, 'Chưa đủ cơ sở đánh giá')}")
+st.caption(f"Nguồn trạng thái: {latest.get('alert_source') or 'chưa có'}")
+if inference.get("status") != "ready":
+    st.warning(f"AI chưa có kết quả đầy đủ: {inference.get('status')} · {inference.get('reason') or ''}")
 if latest.get("warning_level_cm") is not None:
     st.caption(
         f"Ngưỡng cảnh báo: {latest['warning_level_cm']:.1f} cm · "
         f"Mức tràn: {latest['overflow_level_cm']:.1f} cm"
     )
-st.caption(f"Lần thí nghiệm: `{latest.get('experiment_id', 'unassigned')}`")
+st.caption(
+    f"AI: `{inference.get('status', 'warming_up')}` · "
+    f"chế độ `{inference.get('mode', 'none')}` · "
+    f"model `{inference.get('model_version', 'chưa có')}`"
+)
 
 if latest.get("main_factor"):
-    st.warning(f"Nguyên nhân chính: {latest['main_factor']}")
+    st.warning(f"Điều kiện dữ liệu: {latest['main_factor']}")
 if latest.get("quality_status") != "valid":
-    st.error(f"Chất lượng dữ liệu: {latest['quality_status']}")
+    message = f"Chất lượng dữ liệu: {latest['quality_status']} · {latest.get('quality_flags', '[]')}"
+    (st.warning if latest.get("quality_status") == "degraded" else st.error)(message)
 
 df = pd.DataFrame(rows)
+for index, row in df.iterrows():
+    for item in (row.get("inference") or {}).get("forecasts", []):
+        horizon = int(item["horizon_seconds"] if item.get("horizon_seconds") is not None else item["horizon_minutes"] * 60)
+        df.at[index, f"forecast_{horizon}s_cm"] = item.get("level_cm")
 df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", utc=True)
-df = df[df["timestamp"].dt.year >= 2020]
-df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Bangkok")
+df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Ho_Chi_Minh")
 df = df.sort_values("timestamp")
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df["timestamp"], y=df["water_level_cm"], name="Mực nước (cm)"))
-fig.add_trace(go.Scatter(x=df["timestamp"], y=df["rain_rate_mmh"], name="Mưa (mm/h)", yaxis="y2"))
-for horizon, column, color in ((15, "forecast_15m_cm", "#f59e0b"), (30, "forecast_30m_cm", "#ef4444")):
+water_rows = df[df.apply(lambda row: sensor_validity(row.to_dict())[0], axis=1)]
+rain_rows = df[df.apply(lambda row: sensor_validity(row.to_dict())[1], axis=1)]
+fig.add_trace(go.Scatter(x=water_rows["timestamp"], y=water_rows["water_level_cm"], name="Mực nước (cm)"))
+fig.add_trace(go.Scatter(x=rain_rows["timestamp"], y=rain_rows["rain_rate_mmh"], name="Mưa (mm/h)", yaxis="y2"))
+for horizon in sorted(forecast_items):
+    column = f"forecast_{horizon}s_cm"
     if column in df.columns:
         forecast_rows = df.dropna(subset=[column])
         fig.add_trace(
             go.Scatter(
-                x=forecast_rows["timestamp"] + pd.to_timedelta(horizon, unit="m"),
+                x=forecast_rows["timestamp"] + pd.to_timedelta(horizon, unit="s"),
                 y=forecast_rows[column],
-                name=f"Dự báo +{horizon} phút",
-                line=dict(dash="dot", color=color),
+                name=f"Dự báo +{format_horizon(horizon)}",
+                line=dict(dash="dot"),
             )
         )
 if latest.get("warning_level_cm") is not None:
@@ -229,8 +203,7 @@ display_cols = [
     "rain_rate_mmh",
     "water_level_cm",
     "quality_status",
-    "forecast_15m_cm",
-    "forecast_30m_cm",
+    *(f"forecast_{horizon}s_cm" for horizon in sorted(forecast_items)),
     "alert_level",
     "main_factor",
 ]
@@ -244,7 +217,8 @@ with st.expander("Thông tin kỹ thuật"):
                 "api": api_base,
                 "warning_level_cm": latest.get("warning_level_cm"),
                 "overflow_level_cm": latest.get("overflow_level_cm"),
-                "latest_model_version": latest.get("model_version"),
+                "inference": inference,
+                "snapshot": snapshot,
             },
             ensure_ascii=False,
             indent=2,

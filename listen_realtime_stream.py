@@ -1,10 +1,6 @@
-"""Công cụ dòng lệnh lắng nghe dữ liệu mực nước và cường độ mưa thời gian thực.
+"""Listen to SSE telemetry with the configured forecast horizons.
 
-Hỗ trợ 2 chế độ:
-1. SSE (Server-Sent Events) - mặc định:
-   python listen_realtime_stream.py --mode sse
-2. WebSocket:
-   python listen_realtime_stream.py --mode ws
+python listen_realtime_stream.py --url http://localhost:8000/api/v2/stream/sse
 """
 
 from __future__ import annotations
@@ -15,6 +11,20 @@ import sys
 from datetime import datetime
 
 import requests
+from mini_flood.notifications import format_horizon
+
+
+def format_forecasts(inference: dict) -> str:
+    forecasts = inference.get("forecasts") or []
+    if not forecasts:
+        return "Chưa có forecast"
+    values = []
+    for point in forecasts:
+        horizon = point["horizon_seconds"]
+        value = point.get("level_cm")
+        text = f"{float(value):.1f} cm" if value is not None else point.get("error") or point.get("status") or "Chưa có kết quả"
+        values.append(f"+{format_horizon(horizon)}: {text}")
+    return " | ".join(values)
 
 
 def listen_sse(url: str, device_id: str | None = None) -> None:
@@ -56,17 +66,14 @@ def listen_sse(url: str, device_id: str | None = None) -> None:
                         rain = float(data.get("rain_rate_mmh", 0.0))
                         status = data.get("quality_status", "valid")
 
-                        pred_15 = "Chưa có"
-                        forecast_15 = data.get("forecast_15m_cm")
-                        if forecast_15 is not None:
-                            pred_15 = f"{float(forecast_15):.1f} cm"
+                        forecasts = format_forecasts(data.get("inference") or {})
 
                         now_str = datetime.now().strftime("%H:%M:%S")
                         print(
-                            f"[{now_str}] 📡 {dev} | Seq={seq:04} | "
+                            f"[{now_str}] 📡 {dev} | Seq={seq} | "
                             f"🌊 Nước: {water:4.1f} cm | "
                             f"🌧️ Mưa: {rain:4.1f} mm/h | "
-                            f"🎯 Dự báo 15m: {pred_15} | "
+                            f"🎯 {forecasts} | "
                             f"Trạng thái: {status}"
                         )
     except KeyboardInterrupt:

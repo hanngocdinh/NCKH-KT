@@ -1,4 +1,4 @@
-"""FastAPI nhận dữ liệu ESP32 cho prototype dự báo ngập 15/30 phút.
+"""FastAPI nhận dữ liệu ESP32 cho dự báo mực nước theo horizon cấu hình.
 
 Chạy:
     uvicorn mini_flood_api:app --host 0.0.0.0 --port 8000
@@ -10,10 +10,11 @@ import asyncio
 import csv
 import io
 import json
+import logging
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from mini_flood import MiniFloodService, MiniFloodSettings
@@ -33,8 +34,12 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
     )
 
     def delivery_loop() -> None:
-        while not stop_event.wait(resolved.notification_poll_seconds):
-            service.delivery_worker.process_due()
+        while not stop_event.wait(resolved.notification_poll_seconds or resolved.notifications.poll_seconds):
+            try:
+                service.alerts.check_device_liveness(resolved.ai.data.offline_timeout_seconds)
+                service.delivery_worker.process_due()
+            except Exception:
+                logging.getLogger(__name__).exception("Notification worker iteration failed")
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -65,9 +70,9 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             await asyncio.to_thread(mdns_thread.join, 2)
 
     api = FastAPI(
-        title="Mini Flood AI API",
-        version="2.0.0",
-        description="[MÔ PHỎNG THỬ NGHIỆM] Dự báo mực nước sau 15/30 phút.",
+        title="Water Level Monitoring API",
+        version="3.0.0",
+        description="Tiếp nhận dữ liệu cảm biến, dự báo mực nước và cung cấp thông tin cảnh báo.",
         lifespan=lifespan,
     )
     api.state.service = service
@@ -80,17 +85,25 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
     def health() -> dict:
         return {
             "status": "ok",
-            "simulation": True,
+            "simulation": resolved.runtime_mode == "demo",
+            "runtime_mode": resolved.runtime_mode,
+            "data_source": service.registry.data_source,
+            "model_demo_approved": service.registry.demo_approved,
             "model_ready": service.registry.ready,
             "model_version": service.registry.version,
+            "model_promoted": service.registry.promoted,
+            "forecast_horizons_seconds": list(resolved.ai.horizons_seconds),
+            "ai_config_hash": resolved.ai.config_hash,
+            "model_errors": service.registry.errors,
+            "selected_models": service.registry.selected_models,
             "database": service.db.counts(),
+            "notification_latency": service.db.delivery_latency(),
             "active_subscribers": service.broadcaster.subscriber_count,
         }
 
     @api.post("/api/v2/telemetry", response_model=TelemetryResponse)
     def telemetry(
         payload: TelemetryPayload,
-        background_tasks: BackgroundTasks,
         x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
     ) -> dict:
         authorize(x_device_key)
@@ -98,11 +111,12 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             result = service.ingest(payload)
         except StationNotConfiguredError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        # Test và các môi trường đã tắt notification worker không được phép
-        # phát sinh side effect ra Telegram/email thật.
-        if resolved.notification_worker_enabled:
-            background_tasks.add_task(service.delivery_worker.process_due)
         return result
+
+    @api.get("/api/v2/stations/{device_id}/snapshot")
+    def snapshot(device_id: str, x_device_key: str | None = Header(default=None, alias="X-Device-Key")):
+        authorize(x_device_key)
+        return service.snapshot(device_id)
 
     @api.get("/api/v2/stations/{device_id}/latest")
     def latest(
@@ -143,15 +157,10 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
     ) -> dict:
         authorize(x_device_key)
         item = service.db.upsert_station_config(device_id=device_id, **request.model_dump())
-        service.db.set_state(
-            f"alert_state:{device_id}",
-            {
-                "alert_level": 0,
-                "recovery_started_at": None,
-                "recovery_from_level": None,
-                "last_danger_alert_at": None,
-            },
-        )
+        state = service.db.get_state(f"alert_state:{device_id}", {})
+        if state:
+            state.update(recovery_started_at=None, recovery_from_level=None)
+            service.db.set_state(f"alert_state:{device_id}", state)
         return item
 
     @api.post("/api/v2/notifications/test")
@@ -161,8 +170,7 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
     ) -> dict:
         authorize(x_device_key)
         alert_id = service.alerts.enqueue_test(device_id)
-        processed = service.delivery_worker.process_due()
-        return {"queued": alert_id is not None, "alert_id": alert_id, "deliveries_processed": processed}
+        return {"queued": alert_id is not None, "alert_id": alert_id, "deliveries_processed": 0}
 
     @api.post("/api/v2/experiments/start")
     def start_experiment(
@@ -195,8 +203,10 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
         rows = service.db.experiment_rows(device_id)
         buffer = io.StringIO()
         fields = [
-            "experiment_id", "device_id", "sequence_no", "timestamp",
+            "experiment_id", "scenario", "device_id", "boot_id", "sequence_no", "server_timestamp",
+            "schema_version", "timestamp", "sample_interval_ms", "sample_age_ms",
             "rain_interval_mm", "rain_rate_mmh", "water_level_cm", "quality_flags",
+            "quality_status",
         ]
         writer = csv.DictWriter(buffer, fieldnames=fields)
         writer.writeheader()

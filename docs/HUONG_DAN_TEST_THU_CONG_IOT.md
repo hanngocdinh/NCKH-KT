@@ -40,7 +40,7 @@ tràn của backend.
 ### An toàn
 
 - Giữ nước thấp và mưa nhỏ.
-- Forecast 15/30 phút phải thấp hơn ngưỡng cảnh báo.
+- Khi model đã được nghiệm thu/nạp thành công, forecast theo horizon cấu hình phải thấp hơn ngưỡng cảnh báo. Khi thiếu model, mong đợi null và model_unavailable; P90 chưa bật.
 - `alert_label` là `An toàn` và không tạo escalation.
 
 ### Cảnh báo và nguy hiểm
@@ -65,14 +65,9 @@ tràn của backend.
 
 ## 5. Simulator backend tùy chọn
 
-Simulator Python chỉ kiểm thử API/backend, không phải firmware ESP32:
-
-```powershell
-python simulate_iot_stream.py --scenario normal --count 20 --speedup 0
-python simulate_iot_stream.py --scenario warning --count 20 --speedup 0
-python simulate_iot_stream.py --scenario danger --count 20 --speedup 0
-python simulate_iot_stream.py --scenario flow --speedup 0
-```
+Runtime hiện tại không kèm simulator/training. Để kiểm tra API khi chưa nối ESP32,
+gửi telemetry HTTP thủ công theo [RUNTIME_GUIDE.md](RUNTIME_GUIDE.md), hoặc chạy test
+runtime với sender giả. Không dùng replay tăng tốc để kết luận đã kiểm thử firmware.
 
 ## 6. Nghiệm thu tự động
 

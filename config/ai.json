@@ -1,0 +1,24 @@
+{
+  "horizons_seconds": [
+    300,
+    600,
+    900
+  ],
+  "data": {
+    "expected_interval_seconds": 60,
+    "rain_window_seconds": 300,
+    "rise_window_seconds": 120,
+    "max_gap_seconds": 90,
+    "lookup_tolerance_seconds": 30,
+    "live_max_age_seconds": 120,
+    "future_tolerance_seconds": 30,
+    "clock_min_timestamp": "2020-01-01T00:00:00+00:00",
+    "offline_timeout_seconds": 180
+  },
+  "explanation": {
+    "heavy_rain_rate_mmh": 30,
+    "heavy_rain_sum_mm": 4,
+    "fast_rise_cm": 1
+  },
+  "output_decimals": 4
+}

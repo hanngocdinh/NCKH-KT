@@ -19,7 +19,7 @@ Trong log boot, kiểm tra bắt buộc:
 Firmware `src/main.cpp` thực hiện bốn nhiệm vụ:
 
 1. Đọc cảm biến mưa và mực nước.
-2. Gửi telemetry đến `POST /api/v2/telemetry` mỗi 60 giây.
+2. Gửi telemetry schema v2 đến `POST /api/v2/telemetry` mỗi 10 giây.
 3. Lưu đệm tối đa 100 bản ghi trong RAM khi mất Wi-Fi và gửi lại sau.
 4. Tự chẩn đoán Wi-Fi, backend và từng đầu vào cảm biến qua trang `/health`.
 
@@ -79,7 +79,7 @@ Nếu chưa nhận được byte, firmware tự gửi lệnh lookup địa chỉ
 `FF 03 07 D0 00 01 91 59` lần lượt ở 2400, 4800 và 9600 baud. Khi nhận frame
 đúng CRC, firmware tự dùng baud và Slave ID tìm được; không gửi function `06`
 và không thay đổi cấu hình cảm biến. Nếu không tìm thấy, quá trình được thử lại
-sau 60 giây. `/health` hiển thị `rs485.discovered`, `baud` và `slave_id`.
+sau 10 giây. `/health` hiển thị `rs485.discovered`, `baud` và `slave_id`.
 
 Thiết bị đang dùng được nhận diện từ tem là `SW-3001-GYL-N01` (cùng protocol
 với tài liệu `SN-3001-GYL-N01`): nguồn 9–30 V DC, Modbus RTU mặc định 4800

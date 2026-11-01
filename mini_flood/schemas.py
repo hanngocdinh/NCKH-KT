@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class TelemetryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = Field(default=1, ge=1, le=1)
+    schema_version: int = Field(default=1, ge=1, le=2)
     device_id: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     # Mỗi lần thiết bị khởi động có một boot_id mới. Giá trị mặc định chỉ để
     # các client V2 cũ tiếp tục hoạt động; firmware mới luôn gửi trường này.
@@ -16,7 +16,9 @@ class TelemetryPayload(BaseModel):
         default="legacy", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
     sequence_no: int = Field(ge=0)
-    timestamp: datetime
+    timestamp: datetime | None = None
+    sample_interval_ms: int | None = Field(default=None, ge=1, le=3_600_000)
+    sample_age_ms: int = Field(default=0, ge=0, le=604_800_000)
     rain_interval_mm: float = Field(ge=0, le=500)
     rain_rate_mmh: float = Field(ge=0, le=1000)
     water_level_cm: float = Field(ge=0, le=500)
@@ -24,10 +26,18 @@ class TelemetryPayload(BaseModel):
 
     @field_validator("timestamp")
     @classmethod
-    def timestamp_requires_timezone(cls, value: datetime) -> datetime:
+    def timestamp_requires_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("timestamp phải có múi giờ")
         return value
+
+    @model_validator(mode="after")
+    def validate_v2_timing(self) -> "TelemetryPayload":
+        if self.schema_version == 2 and self.sample_interval_ms is None:
+            raise ValueError("schema_version=2 yêu cầu sample_interval_ms")
+        return self
 
     @field_validator("quality_flags")
     @classmethod
@@ -52,7 +62,7 @@ class ExperimentStart(BaseModel):
 
     device_id: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     experiment_id: str = Field(min_length=3, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
-    scenario: str = Field(pattern=r"^(normal|warning|danger)$")
+    scenario: str = Field(pattern=r"^(normal|warning|danger|recovery)$")
 
 
 class StationConfigUpdate(BaseModel):

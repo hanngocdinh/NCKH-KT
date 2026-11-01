@@ -23,7 +23,7 @@
 #define MINI_FLOOD_DEVICE_KEY "change-me"
 #endif
 
-#if __has_include("hardware_config.h")
+#if !defined(MINI_FLOOD_FORCE_SAFE_DEFAULTS) && __has_include("hardware_config.h")
 #include "hardware_config.h"
 #else
 // Cau hinh an toan: build duoc nhung khong gia dinh calibration/register.
@@ -40,7 +40,7 @@
 #define MINI_FLOOD_RS485_PROBE_REGISTER 0x0000
 #define MINI_FLOOD_RS485_AUTO_DISCOVERY_ENABLED 1
 #define MINI_FLOOD_RS485_DISCOVERY_RETRY_MS 60000UL
-#define MINI_FLOOD_RAIN_MODBUS_CONFIGURED 1
+#define MINI_FLOOD_RAIN_MODBUS_CONFIGURED 0
 #define MINI_FLOOD_RAIN_MODBUS_BAUD 4800
 #define MINI_FLOOD_RAIN_MODBUS_SERIAL_CONFIG SERIAL_8N1
 #define MINI_FLOOD_RAIN_MODBUS_SLAVE_ID 1
@@ -76,13 +76,15 @@ const char *HARDWARE_PROFILE = "real_hardware";
 // water_level_cm. Đây KHÔNG phải ngưỡng tràn; ngưỡng tràn được cấu hình động ở
 // backend/dashboard.
 const float SENSOR_MOUNT_HEIGHT_CM = 40.0;
-// Thiet bi that lay mau va gui du lieu moi 60 giay.
-const unsigned long SEND_INTERVAL_MS = 60000;
+// Sa ban lay mau moi 10 giay de canh bao trong toi da 15 giay.
+const unsigned long SEND_INTERVAL_MS = 10000;
 const int BUFFER_SIZE = 100;
 String bootId;
 
 struct TelemetryRecord {
   unsigned long sequenceNo;
+  unsigned long sampledAtMs;
+  unsigned long sampleIntervalMs;
   String timestamp;
   float rainIntervalMM;
   float rainRateMMH;
@@ -688,11 +690,13 @@ void enqueueRecord(const TelemetryRecord &record) {
 
 String toJson(const TelemetryRecord &record) {
   String json = "{";
-  json += "\"schema_version\":1,";
+  json += "\"schema_version\":2,";
   json += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   json += "\"boot_id\":\"" + bootId + "\",";
   json += "\"sequence_no\":" + String(record.sequenceNo) + ",";
   json += "\"timestamp\":\"" + record.timestamp + "\",";
+  json += "\"sample_interval_ms\":" + String(record.sampleIntervalMs) + ",";
+  json += "\"sample_age_ms\":" + String(millis() - record.sampledAtMs) + ",";
   json += "\"rain_interval_mm\":" + String(record.rainIntervalMM, 3) + ",";
   json += "\"rain_rate_mmh\":" + String(record.rainRateMMH, 2) + ",";
   json += "\"water_level_cm\":" + String(record.waterLevelCM, 2) + ",";
@@ -815,7 +819,7 @@ void setup() {
   digitalWrite(PIN_LED_WATER, LOW);
   digitalWrite(PIN_LED_RAIN, LOW);
   setBackendLed(false);
-  Serial.println("\n[BOOT] Mini Flood firmware V2 signal-first");
+  Serial.println("\n[BOOT] Mini Flood firmware V3 signal-first");
   Serial.printf("[BOOT] Device: %s\n", DEVICE_ID);
   Serial.printf("[BOOT] Hardware profile: %s\n", HARDWARE_PROFILE);
   char bootIdBuffer[18];
@@ -894,6 +898,8 @@ void loop() {
 
     TelemetryRecord record;
     record.sequenceNo = sequenceNo;
+    record.sampledAtMs = lastMeasureAt;
+    record.sampleIntervalMs = elapsedMs;
     record.timestamp = isoTimestamp();
     record.rainRateMMH = rainRateMMH;
     record.rainIntervalMM = rainRateMMH * intervalHours;

@@ -1,0 +1,10 @@
+{
+  "poll_seconds": 1,
+  "timeout_seconds": 5,
+  "retry_seconds": [2, 5, 10],
+  "message_ttl_seconds": 30,
+  "claim_seconds": 60,
+  "batch_size": 20,
+  "dashboard_refresh_seconds": 1,
+  "stream_queue_size": 100
+}

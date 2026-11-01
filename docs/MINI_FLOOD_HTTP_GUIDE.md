@@ -1,78 +1,90 @@
-# Hướng dẫn HTTP Mini Flood V2
+# HTTP contract — Backend model-only
 
-## Telemetry
+## Nhận dữ liệu
 
-ESP32 gửi `POST /api/v2/telemetry` với header `X-Device-Key`:
+Giữ endpoint POST /api/v2/telemetry và header X-Device-Key. Payload IoT schema v1:
 
 ```json
 {
   "schema_version": 1,
   "device_id": "mini-flood-station-01",
-  "boot_id": "a1b2c3d4-e5f60718",
+  "boot_id": "boot-session",
   "sequence_no": 1,
-  "timestamp": "2026-10-20T10:00:00+07:00",
+  "timestamp": "2026-10-30T12:00:00+07:00",
   "rain_interval_mm": 0.5,
-  "rain_rate_mmh": 30.0,
+  "rain_rate_mmh": 30,
   "water_level_cm": 12.5,
   "quality_flags": []
 }
 ```
 
-`water_level_cm` là mực nước tính từ đáy. ESP32 chỉ đo và gửi dữ liệu; nó không tự gán An toàn/Cảnh báo/Nguy hiểm.
+ACK chỉ gồm accepted, duplicate, quality_status và server_timestamp.
+Schema v2 đã có vẫn nhận để tương thích, không yêu cầu nâng cấp firmware.
+sample_age_ms không được dùng để tạo thời gian training khi đồng hồ lỗi.
 
-## Cấu hình ngưỡng động
+Backend giữ timestamp đo hợp lệ, chuẩn hóa UTC, lưu server_timestamp riêng.
+Đồng hồ lỗi: timestamp lưu thay bằng giờ server, raw_payload giữ giờ gốc,
+timestamp_source=server và clock_invalid. Gói đó không dùng cho model hoặc sensor_rule.
+Gói quá cũ/sai thứ tự chỉ lưu lịch sử, không thay cảnh báo hiện tại.
 
-```powershell
-$headers = @{ "X-Device-Key" = $env:MINI_FLOOD_DEVICE_KEY }
-Invoke-RestMethod `
-  http://localhost:8000/api/v2/stations/mini-flood-station-01/config `
-  -Headers $headers
-```
+## Kết quả và truy vết
 
-Cập nhật:
-
-```powershell
-$body = @{
-  overflow_level_cm = 40
-  warning_margin_cm = 10
-  hysteresis_cm = 2
-  recovery_hold_seconds = 120
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Put `
-  http://localhost:8000/api/v2/stations/mini-flood-station-01/config `
-  -Headers $headers -ContentType "application/json" -Body $body
-```
-
-Backend tính `warning_level_cm = overflow_level_cm - warning_margin_cm`. Cấu hình thay đổi có hiệu lực ở telemetry kế tiếp và không làm thay đổi forecast AI.
-
-## Kết quả
-
-`GET /api/v2/stations/{device_id}/latest` và history/SSE trả về các trường chính:
+GET /api/v2/stations/{device_id}/latest, history và SSE có inference:
 
 ```json
 {
-  "water_level_cm": 25.0,
-  "forecast_15m_cm": 31.4,
-  "forecast_30m_cm": 36.8,
-  "alert_level": 1,
-  "alert_label": "Cảnh báo",
-  "warning_level_cm": 30.0,
-  "overflow_level_cm": 40.0,
-  "model_version": "mini-flood-v2-...",
-  "safety_override": false
+  "status": "ready",
+  "mode": "model",
+  "model_version": "mini-flood-model-...",
+  "config_hash": "...",
+  "forecasts": [
+    {
+      "horizon_seconds": 15,
+      "horizon_minutes": null,
+      "target_timestamp": "2026-10-31T10:00:15+00:00",
+      "level_cm": 31.2,
+      "upper_p90_cm": null,
+      "algorithm": "ridge",
+      "model_version": "mini-flood-model-...",
+      "artifact_hash": "...",
+      "status": "ready",
+      "error": null
+    }
+  ]
 }
 ```
 
-`alert_level` là kết quả của quy tắc theo cấu hình trạm, không phải đầu ra của model.
+Danh sách horizon đọc từ cấu hình. Các trạng thái: ready, warming_up, invalid_input,
+model_unavailable, prediction_failed. Lỗi ở một horizon không làm mất forecast hợp lệ
+của horizon khác; forecast lỗi là null. Chỉ được hạ cảnh báo khi có đầy đủ kết quả hợp lệ.
+Forecast một phần vẫn được nâng cảnh báo nếu model hợp lệ phát hiện vượt ngưỡng.
 
-## Các endpoint khác
+alert_source=model cho cảnh báo theo forecast; sensor_rule chỉ dùng khi số đo nước
+mới và hợp lệ vượt mức tràn. Chưa có cơ sở đánh giá thì alert_level/alert_label là null.
+Khi mất model, giữ mức trước đó và hiển thị inference lỗi, không tự trả An toàn.
 
-- `GET /api/v2/health`
-- `GET /api/v2/stations/{device_id}/history`
-- `GET /api/v2/stream/sse`
-- `WS /api/v2/stream/ws`
-- `POST /api/v2/experiments/start`
-- `POST /api/v2/experiments/stop`
-- `GET /api/v2/experiments/export.csv`
-- `POST /api/v2/notifications/test`
+inference_trace trong latest/history chứa payload gốc, thời gian đo/nhận, feature vector,
+config hash, model/version/hash, output, thời lượng xử lý, station config và quyết định.
+forecast_15m_cm giữ tương thích; forecast_30m_cm=null với pipeline mới.
+P90 trả null và không tham gia quyết định.
+
+GET /api/v2/health cho biết cấu hình và lỗi load model.
+PUT /api/v2/stations/{device_id}/config cập nhật ngưỡng, không xóa mức cảnh báo đang giữ.
+Các API experiment/start, stop, export.csv, notification test và SSE/WebSocket giữ đường dẫn.
+
+
+## Snapshot và chế độ demo
+
+GET /api/v2/stations/{device_id}/snapshot (X-Device-Key) trả last_received,
+current_measurement, current_inference, last_successful_inference và alert_state;
+mỗi item có age_seconds/stale. Dashboard dùng snapshot để gói cũ không thay live.
+
+Inference schema_version=2 có runtime_mode, data_source và demo_approved.
+Horizon mới dùng giây; target_timestamp tính từ giờ đo. Health có
+forecast_horizons_seconds, runtime_mode, data_source và model_demo_approved.
+Mode real mặc định từ chối synthetic; mode demo chỉ nạp bundle synthetic qua gate.
+Forecast 15 giây không được ghi vào forecast_15m_cm; field đó chỉ có giá trị cho
+horizon 900 giây. Adapter lịch sử đổi phút cũ sang giây khi đọc.
+
+POST /notifications/test chỉ enqueue; worker thực hiện gửi nếu được bật.
+Xem [hướng dẫn runtime](RUNTIME_GUIDE.md).
