@@ -17,6 +17,7 @@ import streamlit as st
 from mini_flood.notifications import format_horizon
 
 from mini_flood.config import MiniFloodSettings
+from mini_flood.dashboard_view import select_model_forecasts
 from mini_flood.models import ALERT_LABELS
 from mini_flood.features import sensor_validity
 
@@ -44,7 +45,7 @@ st.caption("Theo dõi mưa, mực nước và dự báo nguy cơ ngập theo th�
 device_id = st.sidebar.text_input("Mã thiết bị", settings.default_device_id)
 history_limit = st.sidebar.slider("Số bản ghi hiển thị", 30, 1000, 240, 10)
 auto_refresh = st.sidebar.checkbox("Tự động làm mới", value=True)
-refresh_interval = st.sidebar.number_input("Chu kỳ làm mới (giây)", min_value=0.1, value=float(settings.notifications.dashboard_refresh_seconds))
+refresh_interval = st.sidebar.number_input("Chu kỳ làm mới giao diện (giây)", min_value=0.1, value=float(settings.notifications.dashboard_refresh_seconds))
 if st.sidebar.button("Làm mới ngay"):
     st.rerun()
 
@@ -119,27 +120,38 @@ if latest is None:
     st.stop()
 
 inference = latest.get("inference") or {}
-forecast_items = {
-    int(item["horizon_seconds"] if item.get("horizon_seconds") is not None else item["horizon_minutes"] * 60): item for item in inference.get("forecasts", [])
-}
+forecast_items, forecast_issues = select_model_forecasts(inference)
 
 
+st.subheader("Dữ liệu cảm biến")
 c1, c2 = st.columns(2)
 measurement = (snapshot or {}).get("current_measurement")
 c1.metric("Mực nước hợp lệ gần nhất", f"{measurement['water_level_cm']:.1f} cm" if measurement else "Chưa có")
 if measurement:
     c1.caption(f"Tuổi số đo: {measurement.get('age_seconds', 0):.1f} giây")
 c2.metric("Cường độ mưa", f"{latest['rain_rate_mmh']:.1f} mm/h" if latest.get("rain_valid") else "Không có số đo hợp lệ")
+
+st.subheader("Dự báo AI")
+if inference.get("runtime_mode") == "demo" or inference.get("data_source") == "synthetic":
+    st.warning("Model đang ở chế độ demo và dùng dữ liệu synthetic; chưa phải kết quả nghiệm thu thiết bị thật.")
 forecast_columns = st.columns(len(forecast_items)) if forecast_items else []
 for column, horizon in zip(forecast_columns, sorted(forecast_items)):
     item = forecast_items.get(horizon, {})
-    point = item.get("level_cm")
-    value = "Chưa có dự báo" if point is None else f"{point:.1f} cm"
-    column.metric(f"Dự báo {format_horizon(horizon)}", value)
-    column.caption(f"{item.get('algorithm') or '-'} · {item.get('status') or ''} · {item.get('error') or ''}")
+    column.metric(f"Dự báo sau {format_horizon(horizon)}", f"{item['level_cm']:.1f} cm")
+    caption = f"{item.get('algorithm') or 'model'} · {item.get('status')}"
+    if item.get("target_timestamp"):
+        try:
+            target = pd.to_datetime(item["target_timestamp"], utc=True).tz_convert("Asia/Ho_Chi_Minh")
+            caption += f" · mốc {target:%H:%M:%S}"
+        except (TypeError, ValueError):
+            forecast_issues.append(f"forecast_{horizon}s_invalid_target_timestamp")
+    column.caption(caption)
+if not forecast_items:
+    st.info("Chưa có output dự báo hợp lệ từ model.")
+
 alert_level = latest.get("alert_level")
-st.subheader(f"Trạng thái: {ALERT_LABELS.get(alert_level, 'Chưa đủ cơ sở đánh giá')}")
-st.caption(f"Nguồn trạng thái: {latest.get('alert_source') or 'chưa có'}")
+st.subheader(f"Quyết định cảnh báo của backend: {ALERT_LABELS.get(alert_level, 'Chưa đủ cơ sở đánh giá')}")
+st.caption(f"Nguồn quyết định: {latest.get('alert_source') or 'chưa có'}; đây không phải output phân loại trực tiếp của model.")
 if inference.get("status") != "ready":
     st.warning(f"AI chưa có kết quả đầy đủ: {inference.get('status')} · {inference.get('reason') or ''}")
 if latest.get("warning_level_cm") is not None:
@@ -154,16 +166,17 @@ st.caption(
 )
 
 if latest.get("main_factor"):
-    st.warning(f"Điều kiện dữ liệu: {latest['main_factor']}")
+    st.warning(f"Giải thích quyết định backend: {latest['main_factor']}")
 if latest.get("quality_status") != "valid":
     message = f"Chất lượng dữ liệu: {latest['quality_status']} · {latest.get('quality_flags', '[]')}"
     (st.warning if latest.get("quality_status") == "degraded" else st.error)(message)
 
 df = pd.DataFrame(rows)
 for index, row in df.iterrows():
-    for item in (row.get("inference") or {}).get("forecasts", []):
-        horizon = int(item["horizon_seconds"] if item.get("horizon_seconds") is not None else item["horizon_minutes"] * 60)
-        df.at[index, f"forecast_{horizon}s_cm"] = item.get("level_cm")
+    history_forecasts, _ = select_model_forecasts(row.get("inference"), require_ready=False)
+    for horizon, item in history_forecasts.items():
+        if horizon in forecast_items:
+            df.at[index, f"forecast_{horizon}s_cm"] = item["level_cm"]
 df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", utc=True)
 df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Ho_Chi_Minh")
 df = df.sort_values("timestamp")
@@ -180,13 +193,13 @@ for horizon in sorted(forecast_items):
             go.Scatter(
                 x=forecast_rows["timestamp"] + pd.to_timedelta(horizon, unit="s"),
                 y=forecast_rows[column],
-                name=f"Dự báo +{format_horizon(horizon)}",
+                name=f"AI dự báo +{format_horizon(horizon)}",
                 line=dict(dash="dot"),
             )
         )
 if latest.get("warning_level_cm") is not None:
-    fig.add_hline(y=latest["warning_level_cm"], line_dash="dash", line_color="#f59e0b", annotation_text="Cảnh báo")
-    fig.add_hline(y=latest["overflow_level_cm"], line_dash="dash", line_color="#ef4444", annotation_text="Mức tràn")
+    fig.add_hline(y=latest["warning_level_cm"], line_dash="dash", line_color="#f59e0b", annotation_text="Ngưỡng cảnh báo (cấu hình)")
+    fig.add_hline(y=latest["overflow_level_cm"], line_dash="dash", line_color="#ef4444", annotation_text="Mức tràn (cấu hình)")
 fig.update_layout(
     height=420,
     xaxis_title="Thời gian",
@@ -217,6 +230,7 @@ with st.expander("Thông tin kỹ thuật"):
                 "api": api_base,
                 "warning_level_cm": latest.get("warning_level_cm"),
                 "overflow_level_cm": latest.get("overflow_level_cm"),
+                "forecast_validation_issues": forecast_issues,
                 "inference": inference,
                 "snapshot": snapshot,
             },
