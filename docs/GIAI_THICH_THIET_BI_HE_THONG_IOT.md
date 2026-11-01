@@ -35,6 +35,10 @@ ESP32 là bộ xử lý chính tại trạm. Nó có các nhiệm vụ:
 - Điều khiển các LED chẩn đoán.
 - Lưu tạm dữ liệu khi backend hoặc Wi-Fi bị gián đoạn.
 
+Firmware V3 hiện lấy mẫu mỗi 10 giây và gửi telemetry schema v2. Xem
+[phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md) để biết các thay đổi,
+giới hạn buffer và mức độ tương thích với model.
+
 ### 2.1 Phân công GPIO cho phần cứng thật
 
 | Chân ESP32 | Công dụng |
@@ -313,15 +317,17 @@ ESP32 thông thường sử dụng Wi-Fi 2,4 GHz. Một SSID chỉ phát trên 5
 
 ## 10. Backend
 
-ESP32 gửi HTTP `POST /api/v2/telemetry` với dữ liệu dạng:
+ESP32 V3 gửi HTTP `POST /api/v2/telemetry` với dữ liệu dạng:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "device_id": "mini-flood-station-01",
   "boot_id": "ma-khoi-dong",
   "sequence_no": 123,
-  "timestamp": "2026-10-22T13:30:00+07:00",
+  "timestamp": "2026-11-01T13:30:00+07:00",
+  "sample_interval_ms": 10000,
+  "sample_age_ms": 0,
   "rain_interval_mm": 0.05,
   "rain_rate_mmh": 36.0,
   "water_level_cm": 12.5,
@@ -333,10 +339,11 @@ Backend thực hiện:
 
 - Xác thực thiết bị.
 - Chống ghi trùng bằng `boot_id + sequence_no`.
+- Phân biệt thời gian đo, thời gian nhận và tuổi mẫu trong buffer.
+- Không cho gói cũ, sai giờ hoặc sai thứ tự thay trạng thái live.
 - Lưu telemetry.
-- Tính lượng mưa tích lũy trong 5 phút.
-- Tính mức thay đổi mực nước trong 2 phút.
-- Dự báo mực nước T+15 và T+30.
+- Tính feature theo cửa sổ thời gian của profile AI đang chọn.
+- Dự báo theo danh sách horizon trong cấu hình.
 - So sánh với ngưỡng động.
 - Cập nhật dashboard và gửi Telegram.
 
@@ -346,25 +353,20 @@ Model AI không đọc trực tiếp xung Echo hoặc khung RS485. Nó chỉ s�
 
 ```text
 rain_rate_mmh
-rain_sum_5m
+rain_sum_window_mm
 water_level_cm
-water_rise_2m_cm
+water_delta_window_cm
 ```
 
 Đầu ra của model:
 
 ```text
-forecast_15m_cm
-inference.forecasts (5/10/15 phút + upper_p90_cm)
+inference.forecasts (horizon lấy từ cấu hình)
 ```
 
-AI không tự quyết định An toàn/Cảnh báo/Nguy hiểm. Backend lấy giá trị lớn nhất trong mực nước hiện tại và hai dự báo:
-
-```text
-effective_level = max(water_level_cm, upper_p90_5m, upper_p90_10m, upper_p90_15m)
-```
-
-Sau đó so sánh với cấu hình trạm. Với cấu hình mặc định:
+Backend so sánh forecast hợp lệ với cấu hình trạm. Mực nước hiện tại mới và hợp
+lệ vẫn có thể kích hoạt `sensor_rule` ngay cả khi model chưa sẵn sàng. Với cấu
+hình mặc định:
 
 - Dưới 30 cm: An toàn.
 - Từ 30 cm đến dưới 40 cm: Cảnh báo.

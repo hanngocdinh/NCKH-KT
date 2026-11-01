@@ -2,15 +2,18 @@
 
 ## Nhận dữ liệu
 
-Giữ endpoint POST /api/v2/telemetry và header X-Device-Key. Payload IoT schema v1:
+Giữ endpoint `POST /api/v2/telemetry` và header `X-Device-Key`. Firmware ESP32 V3
+gửi payload schema v2:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "device_id": "mini-flood-station-01",
   "boot_id": "boot-session",
   "sequence_no": 1,
-  "timestamp": "2026-10-30T12:00:00+07:00",
+  "timestamp": "2026-11-01T12:00:00+07:00",
+  "sample_interval_ms": 10000,
+  "sample_age_ms": 0,
   "rain_interval_mm": 0.5,
   "rain_rate_mmh": 30,
   "water_level_cm": 12.5,
@@ -18,9 +21,10 @@ Giữ endpoint POST /api/v2/telemetry và header X-Device-Key. Payload IoT schem
 }
 ```
 
-ACK chỉ gồm accepted, duplicate, quality_status và server_timestamp.
-Schema v2 đã có vẫn nhận để tương thích, không yêu cầu nâng cấp firmware.
-sample_age_ms không được dùng để tạo thời gian training khi đồng hồ lỗi.
+ACK chỉ gồm `accepted`, `duplicate`, `quality_status` và `server_timestamp`.
+Backend vẫn nhận schema v1 để tương thích client cũ. Schema v2 bắt buộc có
+`sample_interval_ms`; `sample_age_ms` biểu diễn tuổi mẫu khi nằm trong buffer và
+không được dùng để thay timestamp đo.
 
 Backend giữ timestamp đo hợp lệ, chuẩn hóa UTC, lưu server_timestamp riêng.
 Đồng hồ lỗi: timestamp lưu thay bằng giờ server, raw_payload giữ giờ gốc,
@@ -87,4 +91,5 @@ Forecast 15 giây không được ghi vào forecast_15m_cm; field đó chỉ có
 horizon 900 giây. Adapter lịch sử đổi phút cũ sang giây khi đọc.
 
 POST /notifications/test chỉ enqueue; worker thực hiện gửi nếu được bật.
-Xem [hướng dẫn runtime](RUNTIME_GUIDE.md).
+Xem [phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md) và
+[hướng dẫn runtime](RUNTIME_GUIDE.md).

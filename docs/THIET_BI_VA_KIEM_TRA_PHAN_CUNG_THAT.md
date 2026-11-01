@@ -175,11 +175,13 @@ Sau khi đọc và quy đổi cảm biến, ESP32 gửi HTTP `POST /api/v2/telem
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "device_id": "mini-flood-station-01",
   "boot_id": "<mỗi lần khởi động một mã>",
   "sequence_no": 123,
-  "timestamp": "2026-10-22T13:30:00+07:00",
+  "timestamp": "2026-11-01T13:30:00+07:00",
+  "sample_interval_ms": 10000,
+  "sample_age_ms": 0,
   "rain_interval_mm": 0.05,
   "rain_rate_mmh": 36.0,
   "water_level_cm": 12.5,
@@ -191,12 +193,17 @@ Sau khi đọc và quy đổi cảm biến, ESP32 gửi HTTP `POST /api/v2/telem
 
 | Trường | Nguồn |
 |---|---|
+| `sample_interval_ms` | Khoảng thời gian thực giữa hai lần lấy mẫu |
+| `sample_age_ms` | Tuổi của mẫu khi gửi; tăng khi mẫu nằm trong buffer ngoại tuyến |
 | `rain_interval_mm` | Lượng mưa trong đúng khoảng lấy mẫu; có thể lấy trực tiếp từ cảm biến hoặc tính từ cường độ |
 | `rain_rate_mmh` | Cường độ mưa đã chuẩn hóa về mm/h |
 | `water_level_cm` | Chiều cao lắp HC-SR04 trừ khoảng cách tới mặt nước |
 | `quality_flags` | Lỗi timeout, CRC, chưa hiệu chuẩn, dữ liệu ngoài phạm vi... |
 
-Backend mới là nơi tính `rain_sum_5m`, `water_rise_2m_cm`, dự báo T+15/T+30 và trạng thái An toàn/Cảnh báo/Nguy hiểm. ESP32 không nên tự gán trạng thái cảnh báo.
+Backend mới là nơi tính `rain_sum_window_mm`, `water_delta_window_cm`, dự báo
+theo horizon trong profile AI và trạng thái An toàn/Cảnh báo/Nguy hiểm. ESP32
+không tự gán trạng thái cảnh báo. Xem
+[phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md).
 
 ## 8. Tiêu chí nghiệm thu toàn hệ thống
 

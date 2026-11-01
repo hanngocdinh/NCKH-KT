@@ -9,31 +9,40 @@
 Mục tiêu kỹ thuật:
 
 - Đo mực nước và cường độ mưa theo chu kỳ.
-- Dự báo mực nước sau các horizon trong cấu hình (mặc định 5/10/15 phút), chỉ dùng learned model.
+- Dự báo mực nước theo các horizon trong cấu hình, chỉ dùng learned model.
 - Tách kết quả AI khỏi ngưỡng cảnh báo của từng vị trí lắp đặt.
 - Cảnh báo sớm trước khi nước chạm mức tràn của sa bàn.
 
 ## 2. Thu thập và xử lý dữ liệu
 
-ESP32 gửi các trường `rain_interval_mm`, `rain_rate_mmh` và `water_level_cm` tới API `/api/v2/telemetry`. `water_level_cm` được tính từ đáy bể; khoảng cách lắp cảm biến chỉ phục vụ phép quy đổi tại firmware.
+ESP32 V3 gửi schema v2 gồm thời gian đo, `sample_interval_ms`, `sample_age_ms`,
+`rain_interval_mm`, `rain_rate_mmh` và `water_level_cm` tới API
+`/api/v2/telemetry`. `water_level_cm` được tính từ đáy bể; khoảng cách lắp cảm
+biến chỉ phục vụ phép quy đổi tại firmware.
 
-Backend tạo bốn đặc trưng tương thích chu kỳ IoT 60 giây:
+Backend tạo bốn đặc trưng theo cửa sổ của profile AI đang chọn:
 
 | Đặc trưng | Ý nghĩa |
 |---|---|
 | `rain_rate_mmh` | Cường độ mưa hiện tại |
-| `rain_sum_5m` | Tổng lượng mưa trong 5 phút |
+| `rain_sum_window_mm` | Tổng lượng mưa trong cửa sổ cấu hình |
 | `water_level_cm` | Mực nước hiện tại |
-| `water_rise_2m_cm` | Mức thay đổi mực nước trong 2 phút |
+| `water_delta_window_cm` | Mức thay đổi mực nước trong cửa sổ cấu hình |
 
 Dữ liệu được tách train/test theo lần thí nghiệm và thứ tự thời gian để tránh rò rỉ thông tin tương lai.
+
+Source firmware hiện lấy mẫu 10 giây. Bundle demo đóng gói dùng cadence 5 giây và
+horizon 15/30/60 giây; profile real giữ cadence 60 giây và horizon 5/10/15 phút.
+Đây là ba contract khác nhau. Nghiệm thu thiết bị thật yêu cầu model/config được
+train và đánh giá đúng cadence 10 giây, hoặc firmware phải đổi về cadence của
+profile đã được kiểm định.
 
 ## 3. Mô hình dự báo
 
 Đầu ra học máy là mực nước liên tục theo từng horizon; model thiếu/lỗi trả null:
 
 \[
-\hat{H}_{5},\quad \hat{H}_{10},\quad \hat{H}_{15}\quad (cm)
+\hat{H}_{h_1},\quad \hat{H}_{h_2},\quad \ldots,\quad \hat{H}_{h_n}\quad (cm)
 \]
 
 Với mỗi horizon, hệ thống so sánh:

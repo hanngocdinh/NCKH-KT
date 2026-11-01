@@ -43,7 +43,9 @@ Trong terminal khác, đặt cùng các biến môi trường rồi chạy:
 streamlit run app_mini_flood_dashboard.py
 ```
 
-Xem [hướng dẫn nhận dữ liệu, test HTTP và dashboard](docs/RUNTIME_GUIDE.md), [API](docs/MINI_FLOOD_HTTP_GUIDE.md), [.env mẫu](.env.demo.example).
+Xem [phân tích cập nhật IoT V3](docs/PHAN_TICH_CAP_NHAT_IOT_V3.md),
+[hướng dẫn nhận dữ liệu, test HTTP và dashboard](docs/RUNTIME_GUIDE.md),
+[API](docs/MINI_FLOOD_HTTP_GUIDE.md), [.env mẫu](.env.demo.example).
 
 ## Dữ liệu model cần
 
@@ -62,4 +64,4 @@ python -m pip install -r requirements-dev.txt
 pytest -q
 ```
 
-Training, generator, evaluation, dataset và model thử nghiệm cũ đã chuyển khỏi mã chính vào archive/ai_training (bản lưu local, không được runtime import). Trọng số models/current được giữ nguyên hash. IoT không thay đổi.
+Training, generator, evaluation, dataset và model thử nghiệm cũ đã chuyển khỏi mã chính vào archive/ai_training (bản lưu local, không được runtime import). Trọng số models/current được giữ nguyên hash. Firmware IoT hiện là V3, gửi schema v2 mỗi 10 giây; cadence này chưa khớp profile model demo 5 giây.

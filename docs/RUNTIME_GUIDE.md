@@ -117,4 +117,6 @@ Chỉ gửi sự kiện nâng/hạ mức, nhắc và sức khỏe thiết bị; 
 - Runtime giữ payload v1/v2, migration và dữ liệu lịch sử.
 - Code training, dataset và bundle thử nghiệm được lưu local tại archive/ai_training, không được runtime import hoặc pytest thu thập.
 - Test runtime: cài requirements-dev.txt rồi chạy `pytest -q`. Có test trực tiếp bundle models/current, không gọi pipeline training.
-- Firmware/cấu hình IoT không thay đổi trong đợt rút gọn này; xác minh cadence thực tế trước khi nối vào model 5 giây.
+- Firmware source hiện là V3/schema v2 với cadence 10 giây. Cadence này chưa khớp
+  profile model demo 5 giây; xem
+  [phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md) trước khi nối thiết bị thật.
