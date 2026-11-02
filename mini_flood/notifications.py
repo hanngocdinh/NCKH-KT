@@ -32,6 +32,16 @@ def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def _fmt_vn_time(value: str) -> str:
+    try:
+        dt = _parse_iso(value)
+        vn_tz = timezone(timedelta(hours=7))
+        vn_dt = dt.astimezone(vn_tz)
+        return vn_dt.strftime("%H:%M:%S %d/%m/%Y (GMT+7)")
+    except Exception:
+        return value
+
+
 def send_telegram(message: str, timeout: float | None = None) -> tuple[bool, str]:
     token = os.getenv("MINI_FLOOD_TELEGRAM_TOKEN", "").strip()
     chat_id = os.getenv("MINI_FLOOD_TELEGRAM_CHAT_ID", "").strip()
@@ -141,7 +151,7 @@ class AlertManager:
                 f"device:{device_id}:recovery:{timestamp}",
                 "device_recovery",
                 0,
-                f"[GIÁM SÁT MỰC NƯỚC]\nKẾT NỐI THIẾT BỊ ĐÃ PHỤC HỒI\nTrạm: {device_id}\nThời gian: {timestamp}",
+                f"[GIÁM SÁT MỰC NƯỚC]\n🟢 KẾT NỐI THIẾT BỊ ĐÃ PHỤC HỒI\nTrạm: {device_id}\nThời gian: {_fmt_vn_time(timestamp)}",
             )
         self.db.set_state(liveness_key, {"online": True, "last_seen_at": timestamp})
         if previous is None and water_valid and rain_valid:
@@ -150,7 +160,7 @@ class AlertManager:
             return None
         if water_valid and rain_valid:
             event_type = "sensor_recovery"
-            message = f"[GIÁM SÁT MỰC NƯỚC]\nTHIẾT BỊ ĐÃ PHỤC HỒI\nTrạm: {device_id}\nThời gian: {timestamp}"
+            message = f"[GIÁM SÁT MỰC NƯỚC]\n🟢 THIẾT BỊ ĐÃ PHỤC HỒI\nTrạm: {device_id}\nThời gian: {_fmt_vn_time(timestamp)}"
             level = 0
         else:
             event_type = "sensor_fault"
@@ -160,9 +170,9 @@ class AlertManager:
             if not rain_valid:
                 failed.append("cảm biến mưa")
             message = (
-                "[GIÁM SÁT MỰC NƯỚC]\nLỖI THIẾT BỊ\n"
+                "[GIÁM SÁT MỰC NƯỚC]\n⚠️ LỖI THIẾT BỊ\n"
                 f"Trạm: {device_id}\nLỗi: {', '.join(failed)}\n"
-                f"Cờ chất lượng: {', '.join(flags) or 'không rõ'}\nThời gian: {timestamp}"
+                f"Cờ chất lượng: {', '.join(flags) or 'không rõ'}\nThời gian: {_fmt_vn_time(timestamp)}"
             )
             level = 1
         event_key = f"sensor:{device_id}:{event_type}:{timestamp}"
@@ -209,7 +219,21 @@ class AlertManager:
         event_type: str,
         alert_source: str = "model",
     ) -> str:
-        heading = "CẢNH BÁO NGUY CƠ NGẬP" if event_type != "recovery" else "TRẠNG THÁI ĐÃ HẠ MỨC"
+        icon_map = {0: "🟢", 1: "🟡", 2: "🔴"}
+        icon = icon_map.get(alert_level, "⚪")
+
+        if event_type == "recovery":
+            heading = "🟢 TRẠNG THÁI ĐÃ HẠ MỨC"
+            conclusion = "🟢 Kết luận: Mực nước đã hạ về mức an toàn và duy trì ổn định."
+        elif alert_level == 2:
+            heading = "🔴 CẢNH BÁO NGUY CƠ NGẬP (NGUY HIỂM)"
+            conclusion = "🔴 Kết luận: Nguy cơ ngập tràn rất cao! Cần kích hoạt phương án ứng phó khẩn cấp."
+        elif alert_level == 1:
+            heading = "🟡 CẢNH BÁO NGUY CƠ NGẬP"
+            conclusion = "🟡 Kết luận: Mực nước hoặc dự báo đang ở mức cảnh báo, cần chú ý theo dõi."
+        else:
+            heading = "🟢 TRẠNG THÁI BÌNH THƯỜNG"
+            conclusion = "🟢 Kết luận: Trạm hoạt động ổn định, mực nước ở mức an toàn."
 
         def fmt(value: float | None) -> str:
             return "Không có kết quả" if value is None else f"{value:.1f} cm"
@@ -219,7 +243,7 @@ class AlertManager:
                 "[GIÁM SÁT MỰC NƯỚC]",
                 "",
                 heading,
-                f"Trạng thái: {ALERT_LABELS[alert_level]}",
+                f"Trạng thái: {icon} {ALERT_LABELS[alert_level]}",
                 f"Nguồn cảnh báo: {alert_source}",
                 f"Model: {self.model_version}",
                 *(f"Dự báo {format_horizon(horizon)}: {fmt(value)}" for horizon, value in sorted(forecasts.items())),
@@ -228,7 +252,8 @@ class AlertManager:
                 f"Mức tràn: {station['overflow_level_cm']:.1f} cm",
                 f"Độ dâng trong {self.settings.ai.data.rise_window_seconds} giây: {fmt(features.get('water_delta_window_cm'))}",
                 f"Nguyên nhân: {main_factor}",
-                f"Thời gian đo: {timestamp}",
+                conclusion,
+                f"Thời gian đo: {_fmt_vn_time(timestamp)}",
             ]
         )
 

@@ -1674,7 +1674,7 @@
   ],
   "dataset_sha256": "4f9d5fcb63a0acf198855c161d7330543c775430f4052b79d90b71c67bfcbe74",
   "library_versions": {
-    "scikit_learn": "1.8.0",
+    "scikit_learn": "1.6.1",
     "pandas": "2.2.3",
     "numpy": "2.2.6"
   }
