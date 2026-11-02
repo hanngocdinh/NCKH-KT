@@ -173,6 +173,12 @@ def test_station_config_is_dynamic_and_validated(tmp_path):
     with make_client(tmp_path) as client:
         headers = {"X-Device-Key": "test-key"}
         url = "/api/v2/stations/mini-flood-station-01/config"
+        assert client.get("/api/v2/stations").status_code == 401
+        stations = client.get("/api/v2/stations", headers=headers)
+        assert stations.status_code == 200
+        assert stations.json() == {
+            "items": [{"device_id": "mini-flood-station-01", "last_seen_at": None}]
+        }
         initial = client.get(url, headers=headers).json()
         assert initial["overflow_level_cm"] == 40
         assert initial["warning_level_cm"] == 30
@@ -233,3 +239,6 @@ def test_station_config_is_dynamic_and_validated(tmp_path):
         ).json()
         assert latest["alert_level"] == 2
         assert latest["alert_source"] == "sensor_rule"
+        stations = client.get("/api/v2/stations", headers=headers).json()["items"]
+        assert stations[0]["device_id"] == "mini-flood-station-01"
+        assert stations[0]["last_seen_at"] is not None

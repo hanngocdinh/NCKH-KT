@@ -19,7 +19,7 @@ Trong log boot, kiểm tra bắt buộc:
 Firmware `src/main.cpp` thực hiện bốn nhiệm vụ:
 
 1. Đọc cảm biến mưa và mực nước.
-2. Gửi telemetry schema v2 đến `POST /api/v2/telemetry` mỗi 10 giây.
+2. Gửi telemetry schema v2 đến `POST /api/v2/telemetry` mỗi 5 giây.
 3. Lưu đệm tối đa 100 bản ghi trong RAM khi mất Wi-Fi và gửi lại sau.
 4. Tự chẩn đoán Wi-Fi, backend và từng đầu vào cảm biến qua trang `/health`.
 
@@ -36,6 +36,10 @@ Ngoài `secrets.h`, sao chép `include/hardware_config.h.example` thành
 
 - Loại cảm biến nước; cấu hình hiện tại dùng HC-SR04 TRIG GPIO18/ECHO GPIO19.
 - Slave ID, baud/parity, function code, register và scale của cảm biến mưa.
+
+`MINI_FLOOD_DEVICE_ID` trong `secrets.h` phải trùng mã trạm đã cấu hình trên
+backend. Profile demo hiện tại dùng `mini-flood-demo`; mỗi board thật phải có mã
+ổn định và duy nhất. Nhịp gửi mặc định là 5 giây để khớp `config/ai.demo.json`.
 
 ### Tự tìm backend khi IP laptop thay đổi
 

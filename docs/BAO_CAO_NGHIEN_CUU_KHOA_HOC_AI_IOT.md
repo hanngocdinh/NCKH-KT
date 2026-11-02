@@ -31,11 +31,9 @@ Backend tạo bốn đặc trưng theo cửa sổ của profile AI đang chọn:
 
 Dữ liệu được tách train/test theo lần thí nghiệm và thứ tự thời gian để tránh rò rỉ thông tin tương lai.
 
-Source firmware hiện lấy mẫu 10 giây. Bundle demo đóng gói dùng cadence 5 giây và
-horizon 15/30/60 giây; profile real giữ cadence 60 giây và horizon 5/10/15 phút.
-Đây là ba contract khác nhau. Nghiệm thu thiết bị thật yêu cầu model/config được
-train và đánh giá đúng cadence 10 giây, hoặc firmware phải đổi về cadence của
-profile đã được kiểm định.
+Source firmware và bundle demo hiện cùng cadence 5 giây, với horizon 15/30/60
+giây. Profile real 60 giây và horizon 5/10/15 phút là contract khác; khi chuyển
+profile phải dùng đúng model/config đã train và kiểm định cho cadence tương ứng.
 
 ## 3. Mô hình dự báo
 

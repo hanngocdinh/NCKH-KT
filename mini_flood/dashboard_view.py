@@ -6,6 +6,22 @@ import math
 from typing import Any
 
 
+def station_device_ids(payload: dict[str, Any] | None, default_device_id: str) -> list[str]:
+    """Return unique station IDs from the API, with a safe default fallback."""
+    items = payload.get("items") if isinstance(payload, dict) else None
+    device_ids: list[str] = []
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            device_id = item.get("device_id")
+            if isinstance(device_id, str) and device_id and device_id not in device_ids:
+                device_ids.append(device_id)
+    if not device_ids:
+        device_ids.append(default_device_id)
+    return device_ids
+
+
 def forecast_horizon_seconds(item: dict[str, Any]) -> int | None:
     """Return a positive whole-second horizon without guessing a unit."""
     raw = item.get("horizon_seconds")

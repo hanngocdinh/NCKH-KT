@@ -2,7 +2,19 @@ from mini_flood.dashboard_view import (
     forecast_horizon_seconds,
     forecast_level_cm,
     select_model_forecasts,
+    station_device_ids,
 )
+
+
+def test_station_dropdown_uses_api_devices_and_falls_back_safely():
+    payload = {"items": [
+        {"device_id": "qa-new", "last_seen_at": "2026-11-02T10:00:00+00:00"},
+        {"device_id": "qa-old", "last_seen_at": "2026-11-02T09:00:00+00:00"},
+        {"device_id": "qa-new"},
+        {"bad": "row"},
+    ]}
+    assert station_device_ids(payload, "default") == ["qa-new", "qa-old"]
+    assert station_device_ids(None, "default") == ["default"]
 
 
 def test_dashboard_selects_only_ready_outputs_returned_by_model():

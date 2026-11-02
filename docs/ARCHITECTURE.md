@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart LR
-    A[ESP32 V3 / schema v2 / 10 giây] --> B[FastAPI: key và payload]
+    A[ESP32 V3 / schema v2 / 5 giây] --> B[FastAPI: key và payload]
     B --> C[Kiểm tra UTC / quality / duplicate / boot]
     C --> D[SQLite: telemetry và lịch sử]
     D --> E[Feature engine: 4 giá trị]
@@ -33,5 +33,5 @@ bundle đóng gói train từ synthetic; mode real không coi bundle đó là đ
 
 Firmware gửi `sample_interval_ms` và `sample_age_ms` để backend phân biệt mẫu live
 với mẫu được gửi lại từ buffer. Backend vẫn nhận schema v1 cho client cũ. Cadence
-10 giây của firmware hiện chưa khớp profile demo 5 giây; xem
-[phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md) trước khi nghiệm thu AI.
+firmware và profile demo đều là 5 giây; mã `device_id` trên board phải trùng cấu
+hình trạm backend trước khi gửi telemetry.

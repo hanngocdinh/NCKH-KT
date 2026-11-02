@@ -51,6 +51,11 @@ def test_http_predicts_with_packaged_model_without_training_code(tmp_path, monke
         assert all(point["level_cm"] is not None for point in inference["forecasts"])
         assert inference["data_source"] == "synthetic"
         assert set(point["algorithm"] for point in inference["forecasts"]) == {"random_forest"}
+        stations = client.get("/api/v2/stations", headers=headers).json()["items"]
+        assert stations == [{
+            "device_id": settings.default_device_id,
+            "last_seen_at": snapshot["current_inference"]["server_timestamp"],
+        }]
 
 
 def test_synthetic_packaged_model_cannot_be_enabled_as_real():

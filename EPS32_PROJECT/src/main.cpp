@@ -23,6 +23,14 @@
 #define MINI_FLOOD_DEVICE_KEY "change-me"
 #endif
 
+#ifndef MINI_FLOOD_DEVICE_ID
+#define MINI_FLOOD_DEVICE_ID "mini-flood-station-01"
+#endif
+
+#ifndef MINI_FLOOD_SEND_INTERVAL_MS
+#define MINI_FLOOD_SEND_INTERVAL_MS 5000UL
+#endif
+
 #if !defined(MINI_FLOOD_FORCE_SAFE_DEFAULTS) && __has_include("hardware_config.h")
 #include "hardware_config.h"
 #else
@@ -67,7 +75,7 @@
 const char *WIFI_SSID = MINI_FLOOD_WIFI_SSID;
 const char *WIFI_PASSWORD = MINI_FLOOD_WIFI_PASSWORD;
 const char *DEVICE_KEY = MINI_FLOOD_DEVICE_KEY;
-const char *DEVICE_ID = "mini-flood-station-01";
+const char *DEVICE_ID = MINI_FLOOD_DEVICE_ID;
 const char *BACKEND_MDNS_HOST = MINI_FLOOD_BACKEND_MDNS_HOST;
 const uint16_t BACKEND_MDNS_PORT = MINI_FLOOD_BACKEND_MDNS_PORT;
 const char *HARDWARE_PROFILE = "real_hardware";
@@ -76,8 +84,8 @@ const char *HARDWARE_PROFILE = "real_hardware";
 // water_level_cm. Đây KHÔNG phải ngưỡng tràn; ngưỡng tràn được cấu hình động ở
 // backend/dashboard.
 const float SENSOR_MOUNT_HEIGHT_CM = 40.0;
-// Sa ban lay mau moi 10 giay de canh bao trong toi da 15 giay.
-const unsigned long SEND_INTERVAL_MS = 10000;
+// Cadence phải khớp expected_interval_seconds của model đang chạy.
+const unsigned long SEND_INTERVAL_MS = MINI_FLOOD_SEND_INTERVAL_MS;
 const int BUFFER_SIZE = 100;
 String bootId;
 

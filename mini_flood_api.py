@@ -113,6 +113,13 @@ def create_app(settings: MiniFloodSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return result
 
+    @api.get("/api/v2/stations")
+    def stations(
+        x_device_key: str | None = Header(default=None, alias="X-Device-Key"),
+    ) -> dict:
+        authorize(x_device_key)
+        return {"items": service.db.station_last_seen()}
+
     @api.get("/api/v2/stations/{device_id}/snapshot")
     def snapshot(device_id: str, x_device_key: str | None = Header(default=None, alias="X-Device-Key")):
         authorize(x_device_key)

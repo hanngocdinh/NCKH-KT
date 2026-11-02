@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from urllib.parse import quote
 
 import pandas as pd
@@ -17,7 +16,7 @@ import streamlit as st
 from mini_flood.notifications import format_horizon
 
 from mini_flood.config import MiniFloodSettings
-from mini_flood.dashboard_view import select_model_forecasts
+from mini_flood.dashboard_view import select_model_forecasts, station_device_ids
 from mini_flood.models import ALERT_LABELS
 from mini_flood.features import sensor_validity
 
@@ -42,12 +41,39 @@ def api_get(path: str) -> tuple[dict | None, str | None]:
 st.title(f"🌊 {APP_TITLE}")
 st.caption("Theo dõi mưa, mực nước và dự báo nguy cơ ngập theo thời gian thực.")
 
-device_id = st.sidebar.text_input("Mã thiết bị", settings.default_device_id)
+stations_payload, stations_error = api_get("/stations")
+if stations_error:
+    st.error(f"Không đọc được danh sách thiết bị: {stations_error}")
+device_ids = station_device_ids(stations_payload, settings.default_device_id)
+selected_device = st.session_state.get("selected_device_id")
+if isinstance(selected_device, str) and selected_device.strip():
+    selected_device = selected_device.strip()
+    if selected_device not in device_ids:
+        device_ids.insert(0, selected_device)
+else:
+    st.session_state["selected_device_id"] = (
+        settings.default_device_id if settings.default_device_id in device_ids else device_ids[0]
+    )
+device_column, refresh_devices_column = st.columns([4, 1], vertical_alignment="bottom")
+with device_column:
+    device_id = st.selectbox(
+        "Chọn hoặc nhập mã thiết bị",
+        device_ids,
+        key="selected_device_id",
+        accept_new_options=True,
+        help="Chọn trong danh sách hoặc nhập đầy đủ mã thiết bị rồi nhấn Enter.",
+    )
+with refresh_devices_column:
+    if st.button("Làm mới danh sách", use_container_width=True):
+        st.rerun()
+
 history_limit = st.sidebar.slider("Số bản ghi hiển thị", 30, 1000, 240, 10)
 auto_refresh = st.sidebar.checkbox("Tự động làm mới", value=True)
 refresh_interval = st.sidebar.number_input("Chu kỳ làm mới giao diện (giây)", min_value=0.1, value=float(settings.notifications.dashboard_refresh_seconds))
 if st.sidebar.button("Làm mới ngay"):
     st.rerun()
+if auto_refresh:
+    st.sidebar.caption(f"Dữ liệu tự cập nhật mỗi {refresh_interval:g} giây")
 
 encoded_device_id = quote(device_id, safe="")
 station, station_error = api_get(f"/stations/{encoded_device_id}/config")
@@ -75,7 +101,7 @@ with st.sidebar.expander("Cấu hình ngưỡng động", expanded=False):
             else:
                 try:
                     response = requests.put(
-                        f"{api_base}/stations/{device_id}/config",
+                        f"{api_base}/stations/{encoded_device_id}/config",
                         headers=api_headers,
                         json={
                             "overflow_level_cm": overflow,
@@ -91,156 +117,140 @@ with st.sidebar.expander("Cấu hình ngưỡng động", expanded=False):
                 except requests.RequestException as exc:
                     st.error(f"Không thể cập nhật qua API: {exc}")
 
-snapshot, snapshot_error = api_get(f"/stations/{encoded_device_id}/snapshot")
-latest = ((snapshot or {}).get("current_inference") or (snapshot or {}).get("last_received"))
-latest_error = snapshot_error
-last_received = (snapshot or {}).get("last_received") or {}
-if last_received and (not last_received.get("is_live") or last_received.get("quality_status") != "valid"):
-    st.error(f"Gói vừa nhận không đủ chất lượng: {last_received.get('quality_flags')}")
-if latest and latest.get("stale"):
-    st.error(f"Kết quả đã cũ: {latest.get('age_seconds', 0):.1f} giây; chờ dữ liệu mới")
-history_payload, history_error = api_get(
-    f"/stations/{encoded_device_id}/history?limit={history_limit}"
-)
-if latest_error or history_error:
-    st.error(
-        "Không thể đọc dữ liệu từ backend. "
-        f"Latest: {latest_error or 'OK'}; History: {history_error or 'OK'}"
+@st.fragment(run_every=refresh_interval if auto_refresh else None)
+def render_live_data(selected_device_id: str, selected_history_limit: int) -> None:
+    selected_encoded_device_id = quote(selected_device_id, safe="")
+    snapshot, snapshot_error = api_get(f"/stations/{selected_encoded_device_id}/snapshot")
+    latest = ((snapshot or {}).get("current_inference") or (snapshot or {}).get("last_received"))
+    last_received = (snapshot or {}).get("last_received") or {}
+    if last_received and (not last_received.get("is_live") or last_received.get("quality_status") != "valid"):
+        st.warning("Dữ liệu mới nhất chưa đạt chất lượng và không được dùng để thay số đo hiện tại.")
+    if latest and latest.get("stale"):
+        st.warning("Dữ liệu hiện tại đã cũ; đang chờ mẫu mới từ thiết bị.")
+    history_payload, history_error = api_get(
+        f"/stations/{selected_encoded_device_id}/history?limit={selected_history_limit}"
     )
-    st.stop()
-rows = (history_payload or {}).get("items", [])
-if latest is None:
-    st.info(
-        "Backend đang hoạt động nhưng chưa có telemetry cho thiết bị này. "
-        "Gửi telemetry vào API từ IoT hoặc công cụ HTTP để bắt đầu."
-    )
-    if auto_refresh:
-        time.sleep(refresh_interval)
-        st.rerun()
-    st.stop()
+    if snapshot_error or history_error:
+        st.error("Không thể đọc dữ liệu từ backend.")
+        return
+    rows = (history_payload or {}).get("items", [])
+    if latest is None:
+        st.info("Chưa có dữ liệu cho thiết bị này.")
+        return
 
-inference = latest.get("inference") or {}
-forecast_items, forecast_issues = select_model_forecasts(inference)
+    inference = latest.get("inference") or {}
+    forecast_items, forecast_issues = select_model_forecasts(inference)
 
+    st.subheader("Dữ liệu cảm biến")
+    c1, c2 = st.columns(2)
+    measurement = (snapshot or {}).get("current_measurement")
+    c1.metric("Mực nước hợp lệ gần nhất", f"{measurement['water_level_cm']:.1f} cm" if measurement else "Chưa có")
+    c2.metric("Cường độ mưa", f"{latest['rain_rate_mmh']:.1f} mm/h" if latest.get("rain_valid") else "Không có số đo hợp lệ")
 
-st.subheader("Dữ liệu cảm biến")
-c1, c2 = st.columns(2)
-measurement = (snapshot or {}).get("current_measurement")
-c1.metric("Mực nước hợp lệ gần nhất", f"{measurement['water_level_cm']:.1f} cm" if measurement else "Chưa có")
-if measurement:
-    c1.caption(f"Tuổi số đo: {measurement.get('age_seconds', 0):.1f} giây")
-c2.metric("Cường độ mưa", f"{latest['rain_rate_mmh']:.1f} mm/h" if latest.get("rain_valid") else "Không có số đo hợp lệ")
+    st.subheader("Dự báo AI")
+    forecast_columns = st.columns(len(forecast_items)) if forecast_items else []
+    for column, horizon in zip(forecast_columns, sorted(forecast_items)):
+        item = forecast_items.get(horizon, {})
+        column.metric(f"Dự báo sau {format_horizon(horizon)}", f"{item['level_cm']:.1f} cm")
+        if item.get("target_timestamp"):
+            try:
+                pd.to_datetime(item["target_timestamp"], utc=True)
+            except (TypeError, ValueError):
+                forecast_issues.append(f"forecast_{horizon}s_invalid_target_timestamp")
+    if not forecast_items:
+        st.info("Đang chờ đủ dữ liệu để tạo dự báo.")
 
-st.subheader("Dự báo AI")
-if inference.get("runtime_mode") == "demo" or inference.get("data_source") == "synthetic":
-    st.warning("Model đang ở chế độ demo và dùng dữ liệu synthetic; chưa phải kết quả nghiệm thu thiết bị thật.")
-forecast_columns = st.columns(len(forecast_items)) if forecast_items else []
-for column, horizon in zip(forecast_columns, sorted(forecast_items)):
-    item = forecast_items.get(horizon, {})
-    column.metric(f"Dự báo sau {format_horizon(horizon)}", f"{item['level_cm']:.1f} cm")
-    caption = f"{item.get('algorithm') or 'model'} · {item.get('status')}"
-    if item.get("target_timestamp"):
-        try:
-            target = pd.to_datetime(item["target_timestamp"], utc=True).tz_convert("Asia/Ho_Chi_Minh")
-            caption += f" · mốc {target:%H:%M:%S}"
-        except (TypeError, ValueError):
-            forecast_issues.append(f"forecast_{horizon}s_invalid_target_timestamp")
-    column.caption(caption)
-if not forecast_items:
-    st.info("Chưa có output dự báo hợp lệ từ model.")
+    alert_level = latest.get("alert_level")
+    st.subheader(f"Trạng thái: {ALERT_LABELS.get(alert_level, 'Chưa đủ dữ liệu')}")
+    if inference.get("status") != "ready":
+        st.caption("AI đang thu thập thêm dữ liệu hợp lệ.")
+    if latest.get("quality_status") == "invalid":
+        st.error("Mẫu dữ liệu hiện tại không hợp lệ nên không được dùng để dự báo.")
+    elif latest.get("quality_status") == "stale":
+        st.warning("Mẫu dữ liệu hiện tại đã cũ nên không được dùng để dự báo.")
 
-alert_level = latest.get("alert_level")
-st.subheader(f"Quyết định cảnh báo của backend: {ALERT_LABELS.get(alert_level, 'Chưa đủ cơ sở đánh giá')}")
-st.caption(f"Nguồn quyết định: {latest.get('alert_source') or 'chưa có'}; đây không phải output phân loại trực tiếp của model.")
-if inference.get("status") != "ready":
-    st.warning(f"AI chưa có kết quả đầy đủ: {inference.get('status')} · {inference.get('reason') or ''}")
-if latest.get("warning_level_cm") is not None:
-    st.caption(
-        f"Ngưỡng cảnh báo: {latest['warning_level_cm']:.1f} cm · "
-        f"Mức tràn: {latest['overflow_level_cm']:.1f} cm"
-    )
-st.caption(
-    f"AI: `{inference.get('status', 'warming_up')}` · "
-    f"chế độ `{inference.get('mode', 'none')}` · "
-    f"model `{inference.get('model_version', 'chưa có')}`"
-)
-
-if latest.get("main_factor"):
-    st.warning(f"Giải thích quyết định backend: {latest['main_factor']}")
-if latest.get("quality_status") != "valid":
-    message = f"Chất lượng dữ liệu: {latest['quality_status']} · {latest.get('quality_flags', '[]')}"
-    (st.warning if latest.get("quality_status") == "degraded" else st.error)(message)
-
-df = pd.DataFrame(rows)
-for index, row in df.iterrows():
-    history_forecasts, _ = select_model_forecasts(row.get("inference"), require_ready=False)
-    for horizon, item in history_forecasts.items():
-        if horizon in forecast_items:
-            df.at[index, f"forecast_{horizon}s_cm"] = item["level_cm"]
-df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", utc=True)
-df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Ho_Chi_Minh")
-df = df.sort_values("timestamp")
-fig = go.Figure()
-water_rows = df[df.apply(lambda row: sensor_validity(row.to_dict())[0], axis=1)]
-rain_rows = df[df.apply(lambda row: sensor_validity(row.to_dict())[1], axis=1)]
-fig.add_trace(go.Scatter(x=water_rows["timestamp"], y=water_rows["water_level_cm"], name="Mực nước (cm)"))
-fig.add_trace(go.Scatter(x=rain_rows["timestamp"], y=rain_rows["rain_rate_mmh"], name="Mưa (mm/h)", yaxis="y2"))
-for horizon in sorted(forecast_items):
-    column = f"forecast_{horizon}s_cm"
-    if column in df.columns:
-        forecast_rows = df.dropna(subset=[column])
-        fig.add_trace(
-            go.Scatter(
-                x=forecast_rows["timestamp"] + pd.to_timedelta(horizon, unit="s"),
-                y=forecast_rows[column],
-                name=f"AI dự báo +{format_horizon(horizon)}",
-                line=dict(dash="dot"),
+    df = pd.DataFrame(rows)
+    if df.empty or "timestamp" not in df.columns:
+        st.info("Chưa có lịch sử dữ liệu để vẽ biểu đồ.")
+        return
+    for index, row in df.iterrows():
+        history_forecasts, _ = select_model_forecasts(row.get("inference"), require_ready=False)
+        for horizon, item in history_forecasts.items():
+            if horizon in forecast_items:
+                df.at[index, f"forecast_{horizon}s_cm"] = item["level_cm"]
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", utc=True)
+    df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Ho_Chi_Minh")
+    df = df.sort_values("timestamp")
+    fig = go.Figure()
+    water_rows = df[df.apply(lambda row: sensor_validity(row.to_dict())[0], axis=1)]
+    rain_rows = df[df.apply(lambda row: sensor_validity(row.to_dict())[1], axis=1)]
+    fig.add_trace(go.Scatter(x=water_rows["timestamp"], y=water_rows["water_level_cm"], name="Mực nước (cm)"))
+    fig.add_trace(go.Scatter(x=rain_rows["timestamp"], y=rain_rows["rain_rate_mmh"], name="Mưa (mm/h)", yaxis="y2"))
+    for horizon in sorted(forecast_items):
+        column = f"forecast_{horizon}s_cm"
+        if column in df.columns:
+            forecast_rows = df.dropna(subset=[column])
+            fig.add_trace(
+                go.Scatter(
+                    x=forecast_rows["timestamp"] + pd.to_timedelta(horizon, unit="s"),
+                    y=forecast_rows[column],
+                    name=f"AI dự báo +{format_horizon(horizon)}",
+                    line=dict(dash="dot"),
+                )
             )
-        )
-if latest.get("warning_level_cm") is not None:
-    fig.add_hline(y=latest["warning_level_cm"], line_dash="dash", line_color="#f59e0b", annotation_text="Ngưỡng cảnh báo (cấu hình)")
-    fig.add_hline(y=latest["overflow_level_cm"], line_dash="dash", line_color="#ef4444", annotation_text="Mức tràn (cấu hình)")
-fig.update_layout(
-    height=420,
-    xaxis_title="Thời gian",
-    yaxis=dict(title="Mực nước (cm)"),
-    yaxis2=dict(title="Mưa (mm/h)", overlaying="y", side="right"),
-    legend=dict(orientation="h"),
-)
-st.plotly_chart(fig, use_container_width=True)
-
-display_cols = [
-    "timestamp",
-    "sequence_no",
-    "rain_interval_mm",
-    "rain_rate_mmh",
-    "water_level_cm",
-    "quality_status",
-    *(f"forecast_{horizon}s_cm" for horizon in sorted(forecast_items)),
-    "alert_level",
-    "main_factor",
-]
-st.subheader("Dữ liệu gần nhất")
-st.dataframe(df[[c for c in display_cols if c in df.columns]].sort_values("timestamp", ascending=False), hide_index=True)
-
-with st.expander("Thông tin kỹ thuật"):
-    st.code(
-        json.dumps(
-            {
-                "api": api_base,
-                "warning_level_cm": latest.get("warning_level_cm"),
-                "overflow_level_cm": latest.get("overflow_level_cm"),
-                "forecast_validation_issues": forecast_issues,
-                "inference": inference,
-                "snapshot": snapshot,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        language="json",
+    if latest.get("warning_level_cm") is not None:
+        fig.add_hline(y=latest["warning_level_cm"], line_dash="dash", line_color="#f59e0b", annotation_text="Ngưỡng cảnh báo (cấu hình)")
+        fig.add_hline(y=latest["overflow_level_cm"], line_dash="dash", line_color="#ef4444", annotation_text="Mức tràn (cấu hình)")
+    fig.update_layout(
+        height=420,
+        xaxis_title="Thời gian",
+        yaxis=dict(title="Mực nước (cm)"),
+        yaxis2=dict(title="Mưa (mm/h)", overlaying="y", side="right"),
+        legend=dict(orientation="h"),
     )
+    st.plotly_chart(fig, use_container_width=True)
 
-if auto_refresh:
-    st.sidebar.caption(f"⏱️ Tự làm mới sau {refresh_interval}s...")
-    time.sleep(refresh_interval)
-    st.rerun()
+    display_cols = [
+        "timestamp",
+        "water_level_cm",
+        "rain_rate_mmh",
+        *(f"forecast_{horizon}s_cm" for horizon in sorted(forecast_items)),
+        "alert_label",
+    ]
+    st.subheader("Dữ liệu gần nhất")
+    display_df = df[[c for c in display_cols if c in df.columns]].sort_values("timestamp", ascending=False).copy()
+    column_labels = {
+        "timestamp": "Thời gian",
+        "water_level_cm": "Mực nước (cm)",
+        "rain_rate_mmh": "Mưa (mm/h)",
+        "alert_label": "Trạng thái",
+    }
+    for horizon in sorted(forecast_items):
+        column_labels[f"forecast_{horizon}s_cm"] = f"Dự báo +{format_horizon(horizon)} (cm)"
+    st.dataframe(display_df.rename(columns=column_labels), hide_index=True)
+
+    with st.expander("Chi tiết kỹ thuật", expanded=False):
+        st.markdown(
+            "**Chất lượng dữ liệu (`quality_status`)**  \n"
+            "- `valid`: mẫu mới, đúng thời gian và cảm biến hợp lệ.  \n"
+            "- `stale`: mẫu đến quá muộn; chỉ lưu lịch sử.  \n"
+            "- `invalid`: lỗi thời gian, sai thứ tự hoặc cảm biến không hợp lệ."
+        )
+        st.code(
+            json.dumps(
+                {
+                    "api": api_base,
+                    "warning_level_cm": latest.get("warning_level_cm"),
+                    "overflow_level_cm": latest.get("overflow_level_cm"),
+                    "forecast_validation_issues": forecast_issues,
+                    "inference": inference,
+                    "snapshot": snapshot,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            language="json",
+        )
+
+
+render_live_data(device_id, history_limit)

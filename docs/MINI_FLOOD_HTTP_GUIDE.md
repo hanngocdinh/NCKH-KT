@@ -12,7 +12,7 @@ gửi payload schema v2:
   "boot_id": "boot-session",
   "sequence_no": 1,
   "timestamp": "2026-11-01T12:00:00+07:00",
-  "sample_interval_ms": 10000,
+  "sample_interval_ms": 5000,
   "sample_age_ms": 0,
   "rain_interval_mm": 0.5,
   "rain_rate_mmh": 30,

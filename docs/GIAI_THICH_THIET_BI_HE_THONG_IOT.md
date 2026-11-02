@@ -35,7 +35,7 @@ ESP32 là bộ xử lý chính tại trạm. Nó có các nhiệm vụ:
 - Điều khiển các LED chẩn đoán.
 - Lưu tạm dữ liệu khi backend hoặc Wi-Fi bị gián đoạn.
 
-Firmware V3 hiện lấy mẫu mỗi 10 giây và gửi telemetry schema v2. Xem
+Firmware V3 hiện lấy mẫu mỗi 5 giây và gửi telemetry schema v2. Xem
 [phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md) để biết các thay đổi,
 giới hạn buffer và mức độ tương thích với model.
 
@@ -326,7 +326,7 @@ ESP32 V3 gửi HTTP `POST /api/v2/telemetry` với dữ liệu dạng:
   "boot_id": "ma-khoi-dong",
   "sequence_no": 123,
   "timestamp": "2026-11-01T13:30:00+07:00",
-  "sample_interval_ms": 10000,
+  "sample_interval_ms": 5000,
   "sample_age_ms": 0,
   "rain_interval_mm": 0.05,
   "rain_rate_mmh": 36.0,

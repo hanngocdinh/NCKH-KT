@@ -663,6 +663,7 @@ class MiniFloodDatabase:
                 FROM station_configs c
                 LEFT JOIN telemetry t ON t.device_id = c.device_id
                 GROUP BY c.device_id
+                ORDER BY last_seen_at IS NULL, last_seen_at DESC, c.device_id ASC
                 """
             ).fetchall()
         return [dict(row) for row in rows]

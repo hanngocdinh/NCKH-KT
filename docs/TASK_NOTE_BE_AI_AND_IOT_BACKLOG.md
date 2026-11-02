@@ -15,12 +15,12 @@ Xem [RUNTIME_GUIDE.md](RUNTIME_GUIDE.md) để chạy BE/dashboard và gửi HTT
 
 ## IoT đã cập nhật trong source, còn cần nghiệm thu
 
-Firmware source hiện là V3, gửi schema v2 mỗi 10 giây và có metadata interval/age.
+Firmware source hiện là V3, gửi schema v2 mỗi 5 giây và có metadata interval/age.
 Backend đã xử lý timestamp, boot, duplicate, buffer cũ, snapshot và sensor health.
 
 Các việc còn lại:
 
-1. Xác minh cadence thật trước khi dùng model kỳ vọng 5 giây; firmware source 10 giây không chứng minh nhịp thiết bị đang flash.
+1. Nạp lại firmware và xác minh `sample_interval_ms` thực tế xấp xỉ 5000 ms.
 2. Đối chiếu siêu âm/analog và nguồn water_level_cm.
 3. Hiệu chuẩn mốc đo, chiều cao/vùng mù và điện áp Echo.
 4. Kiểm tra frame/register/scale/counter mưa và rain_interval_mm.

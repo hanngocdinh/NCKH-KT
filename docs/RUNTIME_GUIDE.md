@@ -96,6 +96,55 @@ Invoke-RestMethod "$api/stations/mini-flood-demo/snapshot" -Headers $headers
 
 ACK chỉ báo accepted/duplicate/quality/server time. Forecast đọc trong snapshot, latest/history hoặc stream; không trả model output cho ESP32.
 
+### Quét tự động để tìm điểm chuyển Level
+
+Khi BE và dashboard đang chạy, script sau tạo một device QA riêng, gửi bốn mẫu
+warmup rồi tăng mực nước từ 10 đến 42 cm. Sau mỗi gói, script đọc snapshot và in
+forecast, Level cùng nguồn quyết định:
+
+```powershell
+python simulate_iot_alert_thresholds.py --device-key change-this-demo-key
+```
+
+Script in ra device ID QA mới cho mỗi lần chạy; nhập ID đó trên dashboard. Việc
+tạo ID mới tránh alert state của lần test trước ảnh hưởng kết quả. Mặc định script
+gửi đúng nhịp 5 giây của model demo nên cần khoảng 95 giây. Có thể đổi kịch bản:
+
+```powershell
+python simulate_iot_alert_thresholds.py `
+  --device-key change-this-demo-key `
+  --device-id qa-rain-sweep `
+  --rain-rate 36 `
+  --start-water 20 `
+  --end-water 42 `
+  --water-step 1
+```
+
+Script chỉ mô phỏng input IoT qua API thật; forecast và Level vẫn do backend/model
+tạo ra. Nếu notification worker và Telegram đã cấu hình, alert phát sinh trong
+lần quét cũng đi qua hàng đợi gửi thật.
+
+Mỗi lần chạy giữ mưa cố định và quét mực nước để kết quả dễ so sánh. Chạy nhiều
+lần với device QA tự sinh mới để đánh giá ảnh hưởng đồng thời của nước và mưa:
+
+```powershell
+# Không mưa
+python simulate_iot_alert_thresholds.py --device-key change-this-demo-key --rain-rate 0
+
+# Mưa vừa
+python simulate_iot_alert_thresholds.py --device-key change-this-demo-key --rain-rate 36
+
+# Mưa lớn
+python simulate_iot_alert_thresholds.py --device-key change-this-demo-key --rain-rate 100
+
+# Mức giải thích "mưa rất lớn" của profile demo
+python simulate_iot_alert_thresholds.py --device-key change-this-demo-key --rain-rate 300
+```
+
+So sánh dòng `Level 1 xuất hiện lần đầu` giữa các lần chạy. `rain_interval_mm`
+được script tính từ `rain_rate_mmh × 5 / 3600`, nên cả hai feature mưa đều được
+đưa vào backend đúng contract.
+
 ## 5. Cảnh báo và Telegram
 
 BE xét forecast lớn nhất: <30 cm là chưa dự báo vượt ngưỡng; 30–<40 cm cảnh báo; ≥40 cm nguy hiểm. Nước hiện tại mới và hợp lệ ≥40 cm kích hoạt sensor_rule riêng. Model/dữ liệu thiếu không tự kết luận an toàn hoặc hạ mức cũ. Recovery cần hysteresis và thời gian giữ.
@@ -117,6 +166,6 @@ Chỉ gửi sự kiện nâng/hạ mức, nhắc và sức khỏe thiết bị; 
 - Runtime giữ payload v1/v2, migration và dữ liệu lịch sử.
 - Code training, dataset và bundle thử nghiệm được lưu local tại archive/ai_training, không được runtime import hoặc pytest thu thập.
 - Test runtime: cài requirements-dev.txt rồi chạy `pytest -q`. Có test trực tiếp bundle models/current, không gọi pipeline training.
-- Firmware source hiện là V3/schema v2 với cadence 10 giây. Cadence này chưa khớp
-  profile model demo 5 giây; xem
-  [phân tích cập nhật IoT V3](PHAN_TICH_CAP_NHAT_IOT_V3.md) trước khi nối thiết bị thật.
+- Firmware source hiện là V3/schema v2 với cadence 5 giây, khớp profile model
+  demo. `MINI_FLOOD_DEVICE_ID` trên board phải trùng mã trạm backend; profile
+  local trong hướng dẫn này dùng `mini-flood-demo`.

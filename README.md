@@ -64,4 +64,4 @@ python -m pip install -r requirements-dev.txt
 pytest -q
 ```
 
-Training, generator, evaluation, dataset và model thử nghiệm cũ đã chuyển khỏi mã chính vào archive/ai_training (bản lưu local, không được runtime import). Trọng số models/current được giữ nguyên hash. Firmware IoT hiện là V3, gửi schema v2 mỗi 10 giây; cadence này chưa khớp profile model demo 5 giây.
+Training, generator, evaluation, dataset và model thử nghiệm cũ đã chuyển khỏi mã chính vào archive/ai_training (bản lưu local, không được runtime import). Trọng số models/current được giữ nguyên hash. Firmware IoT V3 gửi schema v2 mỗi 5 giây, khớp profile model demo hiện tại; `MINI_FLOOD_DEVICE_ID` phải trùng cấu hình trạm backend.

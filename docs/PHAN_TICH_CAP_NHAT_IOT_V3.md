@@ -3,7 +3,7 @@
 Tài liệu này mô tả trạng thái source IoT hiện tại, các thay đổi so với firmware
 trước đó và những điều kiện cần xác minh trước khi nạp lên thiết bị thật. Nội dung
 được đối chiếu với `EPS32_PROJECT/src/main.cpp`, API và AI runtime ngày
-01/11/2026.
+02/11/2026.
 
 ## 1. Kết luận nhanh
 
@@ -14,7 +14,7 @@ HC-SR04 + cảm biến mưa Modbus
              │
              ▼
         ESP32 firmware V3
-        - lấy mẫu mỗi 10 giây
+        - lấy mẫu mỗi 5 giây
         - kiểm tra cảm biến
         - đệm tối đa 100 mẫu
              │ HTTP POST /api/v2/telemetry
@@ -29,16 +29,16 @@ HC-SR04 + cảm biến mưa Modbus
              └── Telegram/email worker
 ```
 
-Firmware và backend đã thống nhất schema v2. Tuy nhiên cadence firmware 10 giây
-chưa khớp bundle model demo đang yêu cầu mẫu 5 giây. Vì vậy chưa được coi là một
-cấu hình AI hoàn chỉnh cho thiết bị thật nếu chưa chọn lại profile/model phù hợp.
+Firmware, backend và bundle model demo đã thống nhất schema v2 cùng cadence 5
+giây. Mỗi board khai báo `MINI_FLOOD_DEVICE_ID`; giá trị này phải trùng mã trạm
+backend để telemetry được nhận và xuất hiện đúng trên dashboard.
 
 ## 2. Thay đổi trong firmware ESP32
 
 | Hạng mục | Trước | Hiện tại |
 |---|---|---|
 | Phiên bản log boot | V2 | V3 |
-| Chu kỳ lấy mẫu/gửi | 60 giây | 10 giây |
+| Chu kỳ lấy mẫu/gửi | 60 giây | 5 giây |
 | Telemetry | schema v1 | schema v2 |
 | Thời gian mẫu | Chỉ có `timestamp` | Thêm `sample_interval_ms`, `sample_age_ms` |
 | Dữ liệu gửi lại từ buffer | Không biểu diễn rõ tuổi mẫu | Có `sample_age_ms` tăng theo thời gian chờ |
@@ -52,11 +52,11 @@ Payload firmware hiện tại:
 ```json
 {
   "schema_version": 2,
-  "device_id": "mini-flood-station-01",
+  "device_id": "mini-flood-demo",
   "boot_id": "a1b2c3d4-e5f60708",
   "sequence_no": 123,
   "timestamp": "2026-11-01T10:30:00+07:00",
-  "sample_interval_ms": 10000,
+  "sample_interval_ms": 5000,
   "sample_age_ms": 0,
   "rain_interval_mm": 0.05,
   "rain_rate_mmh": 18.0,
@@ -87,8 +87,8 @@ Chỉ đổi thành `1` trong `include/hardware_config.h` sau khi đã xác nh�
 
 ### 2.3 Buffer và dữ liệu ngoại tuyến
 
-ESP32 giữ tối đa 100 bản ghi trong RAM. Với cadence 10 giây, buffer tương đương
-khoảng 16 phút 40 giây. Khi đầy, bản ghi cũ nhất bị loại. Buffer RAM bị mất khi
+ESP32 giữ tối đa 100 bản ghi trong RAM. Với cadence 5 giây, buffer tương đương
+khoảng 8 phút 20 giây. Khi đầy, bản ghi cũ nhất bị loại. Buffer RAM bị mất khi
 ESP32 reset hoặc mất nguồn; đây chưa phải hàng đợi bền vững trên flash.
 
 ## 3. Thay đổi trong backend IoT
@@ -135,22 +135,14 @@ Ba cấu hình đang tồn tại:
 
 | Thành phần | Cadence | Horizon |
 |---|---:|---|
-| Firmware ESP32 V3 | 10 giây | Không dự báo tại thiết bị |
+| Firmware ESP32 V3 | 5 giây | Không dự báo tại thiết bị |
 | `config/ai.demo.json` | Kỳ vọng 5 giây | 15/30/60 giây |
 | `config/ai.json` | Kỳ vọng 60 giây | 5/10/15 phút |
 
 Bundle trong `models/current/` là model synthetic dành cho profile demo 5 giây.
-Firmware 10 giây không cung cấp đủ điểm theo cửa sổ và `max_gap_seconds=8` của
-profile demo, nên có thể giữ trạng thái `warming_up` thay vì tạo forecast.
-
-Trước khi chạy AI với thiết bị thật phải chọn một trong hai hướng:
-
-1. Giữ firmware 10 giây, tạo/kiểm định model và config 10 giây từ dữ liệu thật.
-2. Đổi cadence firmware theo đúng profile đã được kiểm định, sau đó đánh giá tải
-   cảm biến, Wi-Fi và dung lượng buffer.
-
-Không nên chỉ tăng `max_gap_seconds` để ép model chạy, vì feature signature và phân
-phối dữ liệu khi train cũng phải khớp.
+Firmware hiện gửi cùng cadence nên đủ bốn điểm cho cửa sổ 0/5/10/15 giây nếu
+timestamp, cảm biến và mạng hợp lệ. Khi đổi cadence phải thay config và model có
+feature signature tương ứng; không chỉ tăng `max_gap_seconds` để ép model chạy.
 
 ## 5. Tương thích và rủi ro triển khai
 
@@ -163,7 +155,7 @@ phối dữ liệu khi train cũng phải khớp.
 | Dữ liệu mưa hợp lệ | Mặc định tắt | Chỉ bật sau khi đối chiếu datasheet |
 | Buffer mất điện | Chưa bền vững | Đánh giá có cần lưu flash hay không |
 | Model demo | Synthetic, 5 giây | Không dùng để công bố nghiệm thu thật |
-| Cadence firmware/model | Chưa khớp | Chọn profile 10 giây hoặc đổi firmware |
+| Cadence firmware/model | Đã khớp 5 giây | Kiểm tra `sample_interval_ms` khi nghiệm thu |
 
 ## 6. Checklist nghiệm thu IoT
 

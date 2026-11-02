@@ -180,7 +180,7 @@ Sau khi đọc và quy đổi cảm biến, ESP32 gửi HTTP `POST /api/v2/telem
   "boot_id": "<mỗi lần khởi động một mã>",
   "sequence_no": 123,
   "timestamp": "2026-11-01T13:30:00+07:00",
-  "sample_interval_ms": 10000,
+  "sample_interval_ms": 5000,
   "sample_age_ms": 0,
   "rain_interval_mm": 0.05,
   "rain_rate_mmh": 36.0,

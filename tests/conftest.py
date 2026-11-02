@@ -6,9 +6,26 @@ import sklearn
 import joblib
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.linear_model import Ridge
 
 from mini_flood.ai_settings import FEATURE_NAMES, load_ai_config
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_environment(monkeypatch):
+    """Local .env demo settings must not change the contract under test."""
+    for name in (
+        "MINI_FLOOD_MODE",
+        "MINI_FLOOD_AI_CONFIG",
+        "MINI_FLOOD_MODEL_DIR",
+        "MINI_FLOOD_DB",
+        "MINI_FLOOD_DEFAULT_DEVICE_ID",
+        "MINI_FLOOD_DEVICE_KEY",
+        "MINI_FLOOD_NOTIFICATION_WORKER",
+        "MINI_FLOOD_MDNS_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def make_bundle(path, config=None, constant=None):
