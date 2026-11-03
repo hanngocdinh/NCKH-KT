@@ -20,7 +20,7 @@ class TelemetryPayload(BaseModel):
     sample_interval_ms: int | None = Field(default=None, ge=1, le=3_600_000)
     sample_age_ms: int = Field(default=0, ge=0, le=604_800_000)
     rain_interval_mm: float = Field(ge=0, le=500)
-    rain_rate_mmh: float = Field(ge=0, le=1000)
+    rain_rate_mmh: float = Field(ge=0, le=2000)
     water_level_cm: float = Field(ge=0, le=500)
     quality_flags: list[str] = Field(default_factory=list, max_length=20)
 

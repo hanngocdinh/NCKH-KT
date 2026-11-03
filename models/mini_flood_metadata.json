@@ -1,0 +1,38 @@
+{
+  "model_version": "mini-flood-v2-20261026011400",
+  "created_at": "2026-10-26T01:14:00.678194+07:00",
+  "features": [
+    "rain_rate_mmh",
+    "rain_sum_5m",
+    "water_level_cm",
+    "water_rise_2m_cm"
+  ],
+  "horizons_minutes": [
+    15,
+    30
+  ],
+  "selected_models": {
+    "15": "ridge",
+    "30": "random_forest"
+  },
+  "algorithm_policy": "lowest_mae_of_ridge_random_forest_if_better_than_baseline",
+  "learned_models_ready": true,
+  "train_experiments": [
+    "exp-d01",
+    "exp-d02",
+    "exp-n01",
+    "exp-n02",
+    "exp-n03",
+    "exp-w01",
+    "exp-w02",
+    "exp-w03"
+  ],
+  "test_experiments": [
+    "exp-t-danger",
+    "exp-t-normal",
+    "exp-t-warning"
+  ],
+  "training_rows": 392,
+  "test_rows": 147,
+  "disclaimer": "Kết quả mô phỏng thử nghiệm, chưa đại diện cho hệ thống cảnh báo thực tế Hội An."
+}

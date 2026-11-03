@@ -133,3 +133,38 @@ def test_check_telegram_connection_invalid_token(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *args, **kwargs: MockResponse())
     ok, msg = check_telegram_connection("bad_token", "123456")
     assert not ok and "Token không hợp lệ" in msg
+
+
+def test_surge_update_when_water_rises_further(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINI_FLOOD_SURGE_STEP_CM", "5.0")
+    monkeypatch.setenv("MINI_FLOOD_SURGE_COOLDOWN_SECONDS", "0.0")
+    db = MiniFloodDatabase(tmp_path / "alerts.sqlite3")
+    manager = AlertManager(db, MiniFloodSettings(database_path=tmp_path / "alerts.sqlite3"))
+
+    f1 = dict(FEATURES, water_level_cm=41)
+    level, alert_id_1 = evaluate(manager, "2026-10-17T09:00:00+07:00", 41, features=f1)
+    assert level == 2
+    assert alert_id_1 is not None
+
+    # Small increase of 2 cm (43 cm) -> No surge update (below 5 cm threshold)
+    f2 = dict(FEATURES, water_level_cm=43)
+    level, alert_id_2 = evaluate(manager, "2026-10-17T09:00:10+07:00", 43, features=f2)
+    assert level == 2
+    assert alert_id_2 is None
+
+    # Surge increase to 47 cm (>= 5 cm above 41 cm) -> Surge Update triggers!
+    f3 = dict(FEATURES, water_level_cm=47)
+    level, alert_id_3 = evaluate(manager, "2026-10-17T09:00:20+07:00", 47, features=f3)
+    assert level == 2
+    assert alert_id_3 is not None
+
+    with db.connect() as conn:
+        row = conn.execute("SELECT event_type, message FROM alert_events WHERE id = ?", (alert_id_3,)).fetchone()
+        assert row["event_type"] == "surge_update"
+        assert "🔴 CẬP NHẬT: NƯỚC TIẾP TỤC DÂNG CAO" in row["message"]
+
+    # Verify recovery resets surge level properly
+    evaluate(manager, "2026-10-17T09:01:00+07:00", 37, features=dict(FEATURES, water_level_cm=37))
+    level, recovery_id = evaluate(manager, "2026-10-17T09:03:00+07:00", 37, features=dict(FEATURES, water_level_cm=37))
+    assert level == 1
+    assert recovery_id is not None

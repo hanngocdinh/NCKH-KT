@@ -222,7 +222,10 @@ class AlertManager:
         icon_map = {0: "🟢", 1: "🟡", 2: "🔴"}
         icon = icon_map.get(alert_level, "⚪")
 
-        if event_type == "recovery":
+        if event_type == "surge_update":
+            heading = "🔴 CẬP NHẬT: NƯỚC TIẾP TỤC DÂNG CAO"
+            conclusion = "🔴 Kết luận: Nước tiếp tục dâng sâu vượt mức tràn! Khẩn trương di dời tài sản và ứng phó khẩn cấp."
+        elif event_type == "recovery":
             heading = "🟢 TRẠNG THÁI ĐÃ HẠ MỨC"
             conclusion = "🟢 Kết luận: Mực nước đã hạ về mức an toàn và duy trì ổn định."
         elif alert_level == 2:
@@ -277,6 +280,7 @@ class AlertManager:
                 "recovery_started_at": None,
                 "recovery_from_level": None,
                 "last_danger_alert_at": None,
+                "last_danger_water_level": None,
             },
         )
         previous = int(state.get("alert_level", 0))
@@ -306,12 +310,15 @@ class AlertManager:
             event_type = "escalation"
             state["recovery_started_at"] = None
             state["recovery_from_level"] = None
+            if current == 2:
+                state["last_danger_water_level"] = float(features.get("water_level_cm", controlling_level))
         elif raw_level < previous:
             boundary = overflow if previous == 2 else warning
             release_level = boundary - float(station["hysteresis_cm"])
             started_raw = state.get("recovery_started_at")
             recovery_from = state.get("recovery_from_level")
             if controlling_level < release_level:
+                state["last_danger_water_level"] = None
                 if started_raw is None or recovery_from != previous:
                     state["recovery_started_at"] = now.isoformat()
                     state["recovery_from_level"] = previous
@@ -334,13 +341,29 @@ class AlertManager:
 
         if current == 2 and event_type is None and alert_source == "sensor_rule" and sensor_entering:
             event_type = "sensor_overflow"
+
+        curr_water = float(features.get("water_level_cm", controlling_level))
+        last_water = state.get("last_danger_water_level")
+        surge_step = float(os.getenv("MINI_FLOOD_SURGE_STEP_CM", "5.0"))
+        surge_cooldown = float(os.getenv("MINI_FLOOD_SURGE_COOLDOWN_SECONDS", "30.0"))
+
+        if current == 2 and event_type is None and last_water is not None:
+            last_alert_raw = state.get("last_danger_alert_at")
+            last_alert = _parse_iso(last_alert_raw) if last_alert_raw else None
+            time_ok = (last_alert is None or (delivery_now - last_alert).total_seconds() >= surge_cooldown)
+            if (curr_water - float(last_water)) >= surge_step and time_ok:
+                event_type = "surge_update"
+                state["last_danger_water_level"] = curr_water
+        elif current == 2 and last_water is None:
+            state["last_danger_water_level"] = curr_water
+
         if current == 2 and event_type is None:
             last_raw = state.get("last_danger_alert_at")
             last = _parse_iso(last_raw) if last_raw else None
             if last is None or delivery_now - last >= timedelta(minutes=self.settings.reminder_minutes):
                 event_type = "reminder"
 
-        if event_type in {"escalation", "reminder", "sensor_overflow"} and current == 2:
+        if event_type in {"escalation", "reminder", "sensor_overflow", "surge_update"} and current == 2:
             state["last_danger_alert_at"] = delivery_now.isoformat()
         state["alert_level"] = current
         state["alert_source"] = alert_source
